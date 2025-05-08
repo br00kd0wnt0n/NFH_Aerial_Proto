@@ -36,11 +36,7 @@ app.use((req, res, next) => {
 });
 
 // Serve static files with detailed logging
-app.use('/admin', express.static(path.join(__dirname, 'admin'), {
-    setHeaders: (res, path) => {
-        console.log(`Serving static file: ${path}`);
-    }
-}));
+app.use('/admin', express.static(path.join(__dirname, 'admin')));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Environment variables
@@ -166,18 +162,18 @@ app.post('/api/reload', (req, res) => {
     }
 });
 
-// Serve main page
-app.get('/', (req, res) => {
-    const indexPath = path.join(__dirname, 'public', 'index.html');
-    console.log('Serving main page from:', indexPath);
-    res.sendFile(indexPath);
-});
-
 // Serve admin panel
 app.get('/admin', (req, res) => {
     const adminPath = path.join(__dirname, 'admin', 'index.html');
     console.log('Serving admin panel from:', adminPath);
     res.sendFile(adminPath);
+});
+
+// Serve main page
+app.get('/', (req, res) => {
+    const indexPath = path.join(__dirname, 'public', 'index.html');
+    console.log('Serving main page from:', indexPath);
+    res.sendFile(indexPath);
 });
 
 // Error handling middleware
