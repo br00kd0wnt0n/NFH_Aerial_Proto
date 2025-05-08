@@ -58,7 +58,15 @@ mongoose.connect(MONGODB_URI, {
     retryWrites: true,
     w: 'majority'
 })
-    .then(() => console.log('Connected to MongoDB Atlas'))
+    .then(() => {
+        console.log('Connected to MongoDB Atlas');
+        // Start server only after successful database connection
+        app.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
+            console.log(`Admin panel available at: http://localhost:${PORT}/admin`);
+            console.log('Current directory:', __dirname);
+        });
+    })
     .catch(err => {
         console.error('MongoDB connection error:', err);
         process.exit(1); // Exit if we can't connect to the database
@@ -200,11 +208,4 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
     console.log('404 Not Found:', req.url);
     res.status(404).send('Not Found');
-});
-
-// Start server
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    console.log(`Admin panel available at: http://localhost:${PORT}/admin`);
-    console.log('Current directory:', __dirname);
 }); 
