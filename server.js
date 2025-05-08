@@ -58,14 +58,18 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/netflix-house';
 
 // Connect to MongoDB
-mongoose.connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    retryWrites: true,
-    w: 'majority'
-})
-    .then(() => {
+const connectWithRetry = async () => {
+    try {
+        await mongoose.connect(MONGODB_URI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            retryWrites: true,
+            w: 'majority',
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
+        });
         console.log('Connected to MongoDB Atlas');
+        
         // Start server only after successful database connection
         app.listen(PORT, () => {
             console.log(`Server is running on port ${PORT}`);
@@ -73,20 +77,27 @@ mongoose.connect(MONGODB_URI, {
             console.log(`Admin panel available at: ${isProduction ? 'https://nfhaerialproto-production.up.railway.app/admin' : `http://localhost:${PORT}/admin`}`);
             console.log('Current directory:', __dirname);
         });
-    })
-    .catch(err => {
+    } catch (err) {
         console.error('MongoDB connection error:', err);
-        process.exit(1);
-    });
+        console.log('Retrying connection in 5 seconds...');
+        setTimeout(connectWithRetry, 5000);
+    }
+};
+
+// Initial connection attempt
+connectWithRetry();
 
 // Add connection error handler
 mongoose.connection.on('error', err => {
     console.error('MongoDB connection error:', err);
+    console.log('Attempting to reconnect...');
+    setTimeout(connectWithRetry, 5000);
 });
 
 // Add disconnection handler
 mongoose.connection.on('disconnected', () => {
-    console.log('MongoDB disconnected');
+    console.log('MongoDB disconnected. Attempting to reconnect...');
+    setTimeout(connectWithRetry, 5000);
 });
 
 // Add reconnection handler
