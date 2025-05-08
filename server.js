@@ -36,7 +36,13 @@ app.use((req, res, next) => {
 });
 
 // Serve static files with detailed logging
-app.use('/admin', express.static(path.join(__dirname, 'admin')));
+app.use('/admin', express.static(path.join(__dirname, 'admin'), {
+    setHeaders: (res, path) => {
+        if (path.endsWith('.js')) {
+            res.setHeader('Content-Type', 'application/javascript');
+        }
+    }
+}));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Environment variables
