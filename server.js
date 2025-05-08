@@ -60,6 +60,14 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/netfli
 // Connect to MongoDB
 const connectWithRetry = async () => {
     try {
+        if (!MONGODB_URI) {
+            throw new Error('MONGODB_URI is not defined in environment variables');
+        }
+
+        // Log connection attempt (without credentials)
+        const sanitizedUri = MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//****:****@');
+        console.log('Attempting to connect to MongoDB:', sanitizedUri);
+
         await mongoose.connect(MONGODB_URI, {
             useNewUrlParser: true,
             useUnifiedTopology: true,
@@ -78,7 +86,10 @@ const connectWithRetry = async () => {
             console.log('Current directory:', __dirname);
         });
     } catch (err) {
-        console.error('MongoDB connection error:', err);
+        console.error('MongoDB connection error:', err.message);
+        if (err.message.includes('authentication failed')) {
+            console.error('Authentication failed. Please check your MongoDB username and password in the MONGODB_URI environment variable.');
+        }
         console.log('Retrying connection in 5 seconds...');
         setTimeout(connectWithRetry, 5000);
     }
@@ -89,7 +100,10 @@ connectWithRetry();
 
 // Add connection error handler
 mongoose.connection.on('error', err => {
-    console.error('MongoDB connection error:', err);
+    console.error('MongoDB connection error:', err.message);
+    if (err.message.includes('authentication failed')) {
+        console.error('Authentication failed. Please check your MongoDB username and password in the MONGODB_URI environment variable.');
+    }
     console.log('Attempting to reconnect...');
     setTimeout(connectWithRetry, 5000);
 });
