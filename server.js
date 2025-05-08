@@ -32,12 +32,14 @@ app.use(express.json());
 // Debug middleware to log requests
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    console.log('Request headers:', req.headers);
     next();
 });
 
 // Serve static files with detailed logging
 app.use('/admin', express.static(path.join(__dirname, 'admin'), {
     setHeaders: (res, path) => {
+        console.log('Serving static file:', path);
         if (path.endsWith('.js')) {
             res.setHeader('Content-Type', 'application/javascript');
         }
@@ -171,8 +173,14 @@ app.post('/api/reload', (req, res) => {
 // Serve admin panel
 app.get('/admin', (req, res) => {
     const adminPath = path.join(__dirname, 'admin', 'index.html');
-    console.log('Serving admin panel from:', adminPath);
-    res.sendFile(adminPath);
+    console.log('Attempting to serve admin panel from:', adminPath);
+    if (require('fs').existsSync(adminPath)) {
+        console.log('Admin panel file exists, sending...');
+        res.sendFile(adminPath);
+    } else {
+        console.error('Admin panel file not found at:', adminPath);
+        res.status(404).send('Admin panel not found');
+    }
 });
 
 // Serve main page
