@@ -26,6 +26,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hotspotList = document.querySelector('.hotspot-list');
     const houseSelector = document.getElementById('houseSelector');
     const assetHouseSelector = document.getElementById('assetHouseSelector');
+    const assetForm = document.getElementById('assetForm');
+    const startDrawingBtn = document.getElementById('startDrawing');
+    const finishDrawingBtn = document.getElementById('finishDrawing');
+    const cancelDrawingBtn = document.getElementById('cancelDrawing');
+    const assetTypeSelect = document.getElementById('assetType');
+    const hotspotIdContainer = document.getElementById('hotspotIdContainer');
+
+    // Drawing state
+    let isDrawing = false;
+    let currentPoints = [];
+    let currentHotspot = null;
 
     // Navigation event handlers
     navButtons.forEach(button => {
@@ -1335,6 +1346,101 @@ document.addEventListener('DOMContentLoaded', async () => {
                 console.error('Error loading playlists:', error);
             }
         });
+    }
+
+    // Drawing Functions
+    startDrawingBtn.addEventListener('click', startDrawing);
+    finishDrawingBtn.addEventListener('click', finishDrawing);
+    cancelDrawingBtn.addEventListener('click', cancelDrawing);
+    previewContainer.addEventListener('click', handlePreviewClick);
+    assetTypeSelect.addEventListener('change', handleAssetTypeChange);
+
+    // Initialize
+    loadHotspots();
+
+    function startDrawing() {
+        isDrawing = true;
+        currentPoints = [];
+        startDrawingBtn.disabled = true;
+        finishDrawingBtn.disabled = false;
+        cancelDrawingBtn.disabled = false;
+        previewContainer.style.cursor = 'crosshair';
+    }
+
+    function finishDrawing() {
+        if (currentPoints.length < 3) {
+            alert('Please draw at least 3 points to create a polygon');
+            return;
+        }
+        
+        isDrawing = false;
+        startDrawingBtn.disabled = false;
+        finishDrawingBtn.disabled = true;
+        cancelDrawingBtn.disabled = true;
+        previewContainer.style.cursor = 'default';
+        
+        // Create hotspot data
+        const hotspotData = {
+            title: document.getElementById('hotspotTitle').value,
+            type: document.getElementById('hotspotType').value,
+            points: currentPoints,
+            description: document.getElementById('hotspotDescription').value,
+            houseId: parseInt(document.getElementById('houseId').value)
+        };
+        
+        // Save hotspot
+        saveHotspot(hotspotData);
+    }
+
+    function cancelDrawing() {
+        isDrawing = false;
+        currentPoints = [];
+        startDrawingBtn.disabled = false;
+        finishDrawingBtn.disabled = true;
+        cancelDrawingBtn.disabled = true;
+        previewContainer.style.cursor = 'default';
+        updatePreview();
+    }
+
+    function handlePreviewClick(e) {
+        if (!isDrawing) return;
+        
+        const rect = previewContainer.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 100;
+        const y = ((e.clientY - rect.top) / rect.height) * 100;
+        
+        currentPoints.push({ x, y });
+        updatePreview();
+    }
+
+    function handleAssetTypeChange() {
+        const isHotspot = assetTypeSelect.value === 'hotspot';
+        hotspotIdContainer.style.display = isHotspot ? 'block' : 'none';
+    }
+
+    // Hotspot Management
+    async function saveHotspot(hotspotData) {
+        try {
+            const response = await fetch('/api/hotspots', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(hotspotData)
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to save hotspot');
+            }
+            
+            await loadHotspots();
+            hotspotForm.reset();
+            currentPoints = [];
+            updatePreview();
+        } catch (error) {
+            console.error('Error saving hotspot:', error);
+            alert('Failed to save hotspot. Please try again.');
+        }
     }
 
     // Initial load

@@ -10,14 +10,16 @@ const hotspotSchema = new mongoose.Schema({
         required: true,
         enum: ['primary', 'secondary']
     },
-    posX: {
-        type: Number,
-        required: true
-    },
-    posY: {
-        type: Number,
-        required: true
-    },
+    points: [{
+        x: {
+            type: Number,
+            required: true
+        },
+        y: {
+            type: Number,
+            required: true
+        }
+    }],
     description: {
         type: String,
         default: ''

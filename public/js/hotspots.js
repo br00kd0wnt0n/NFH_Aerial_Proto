@@ -295,39 +295,87 @@ class HotspotManager {
     }
     
     renderHotspots() {
-        console.log('Starting to render hotspots:', this.hotspots);
-        console.log('Hotspot container element:', this.hotspotContainer);
-        console.log('Hotspot container parent:', this.hotspotContainer?.parentElement);
-        console.log('Hotspot container computed style:', window.getComputedStyle(this.hotspotContainer));
-        
         // Clear existing hotspots
-        const existingHotspots = this.hotspotContainer.querySelectorAll('.hotspot');
-        console.log('Clearing existing hotspots:', existingHotspots.length);
-        existingHotspots.forEach(hotspot => hotspot.remove());
+        this.hotspotContainer.innerHTML = '';
         
-        // Render new hotspots
+        // Create SVG container
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', '100%');
+        svg.style.position = 'absolute';
+        svg.style.top = '0';
+        svg.style.left = '0';
+        svg.style.pointerEvents = 'none';
+        
         this.hotspots.forEach(hotspot => {
-            console.log('Creating hotspot:', hotspot);
-            const hotspotElement = document.createElement('div');
-            hotspotElement.className = `hotspot ${hotspot.type}`;
-            hotspotElement.style.left = `${hotspot.posX}%`;
-            hotspotElement.style.top = `${hotspot.posY}%`;
-            hotspotElement.dataset.id = hotspot._id;
-            hotspotElement.textContent = hotspot.title;
+            // Create hotspot group
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            group.setAttribute('class', 'hotspot');
+            group.style.pointerEvents = 'all';
+            group.style.cursor = 'pointer';
+            
+            // Create polygon
+            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            const points = hotspot.points.map(p => `${p.x}%,${p.y}%`).join(' ');
+            polygon.setAttribute('points', points);
+            polygon.style.fill = 'transparent';
+            polygon.style.stroke = hotspot.type === 'primary' ? '#e50914' : '#ff4d4d';
+            polygon.style.strokeWidth = '2';
+            group.appendChild(polygon);
+            
+            // Add text label
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            const center = this.calculatePolygonCenter(hotspot.points);
+            text.setAttribute('x', `${center.x}%`);
+            text.setAttribute('y', `${center.y}%`);
+            text.textContent = hotspot.title;
+            text.style.fill = '#fff';
+            text.style.fontSize = '12px';
+            text.style.textAnchor = 'middle';
+            text.style.dominantBaseline = 'middle';
+            text.style.pointerEvents = 'none';
+            group.appendChild(text);
             
             // Add click handler
-            hotspotElement.addEventListener('click', () => this.handleHotspotClick(hotspot));
+            group.addEventListener('click', (e) => {
+                const rect = this.hotspotContainer.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 100;
+                const y = ((e.clientY - rect.top) / rect.height) * 100;
+                
+                if (this.isPointInPolygon({ x, y }, hotspot.points)) {
+                    this.handleHotspotClick(hotspot);
+                }
+            });
             
-            this.hotspotContainer.appendChild(hotspotElement);
-            console.log('Added hotspot to container:', hotspotElement);
-            console.log('Hotspot computed style:', window.getComputedStyle(hotspotElement));
+            svg.appendChild(group);
         });
-
-        // Verify hotspots are in the DOM
-        const renderedHotspots = this.hotspotContainer.querySelectorAll('.hotspot');
-        console.log('Rendered hotspots count:', renderedHotspots.length);
-        console.log('Hotspot container after rendering:', this.hotspotContainer);
-        console.log('Hotspot container HTML:', this.hotspotContainer.innerHTML);
+        
+        this.hotspotContainer.appendChild(svg);
+    }
+    
+    calculatePolygonCenter(points) {
+        const sum = points.reduce((acc, point) => ({
+            x: acc.x + point.x,
+            y: acc.y + point.y
+        }), { x: 0, y: 0 });
+        
+        return {
+            x: sum.x / points.length,
+            y: sum.y / points.length
+        };
+    }
+    
+    isPointInPolygon(point, polygon) {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x, yi = polygon[i].y;
+            const xj = polygon[j].x, yj = polygon[j].y;
+            
+            const intersect = ((yi > point.y) !== (yj > point.y))
+                && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
     }
     
     handleHotspotClick(hotspot) {
