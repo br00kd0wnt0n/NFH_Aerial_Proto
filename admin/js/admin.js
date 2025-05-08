@@ -34,6 +34,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hotspotIdContainer = document.getElementById('hotspotIdContainer');
     const hotspotPreview = document.getElementById('hotspotPreview');
     const previewVideo = document.getElementById('previewVideo');
+    const uploadAssetBtn = document.getElementById('uploadAssetBtn');
+    const uploadAssetModal = document.getElementById('uploadAssetModal');
+    const saveAssetBtn = document.getElementById('saveAssetBtn');
+    const uploadAssetForm = document.getElementById('uploadAssetForm');
 
     // Drawing state
     let isDrawing = false;
@@ -1768,4 +1772,54 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Make deleteAsset available globally
     window.deleteAsset = deleteAsset;
+
+    // Add event listener for upload asset button
+    if (uploadAssetBtn) {
+        uploadAssetBtn.addEventListener('click', () => {
+            const modal = new bootstrap.Modal(uploadAssetModal);
+            modal.show();
+        });
+    }
+
+    // Add event listener for save asset button
+    if (saveAssetBtn) {
+        saveAssetBtn.addEventListener('click', async () => {
+            if (!uploadAssetForm.checkValidity()) {
+                uploadAssetForm.reportValidity();
+                return;
+            }
+
+            const formData = new FormData(uploadAssetForm);
+            formData.append('houseId', assetHouseSelector.value);
+
+            try {
+                const response = await fetch('/api/assets', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to upload asset');
+                }
+
+                // Close modal
+                const modal = bootstrap.Modal.getInstance(uploadAssetModal);
+                modal.hide();
+
+                // Reset form
+                uploadAssetForm.reset();
+
+                // Show success message
+                uploadToastElement.querySelector('.toast-body').textContent = 'Asset uploaded successfully!';
+                uploadToast.show();
+
+                // Reload assets
+                await loadAssets(assetHouseSelector.value);
+            } catch (error) {
+                console.error('Error uploading asset:', error);
+                uploadToastElement.querySelector('.toast-body').textContent = 'Failed to upload asset. Please try again.';
+                uploadToast.show();
+            }
+        });
+    }
 }); 

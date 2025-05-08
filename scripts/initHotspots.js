@@ -15,32 +15,48 @@ const defaultHotspots = [
     {
         title: "Stranger Things",
         type: "primary",
-        posX: 19.5,
-        posY: 19.5,
+        points: [
+            { x: 19.5, y: 19.5 },
+            { x: 21.5, y: 19.5 },
+            { x: 21.5, y: 21.5 },
+            { x: 19.5, y: 21.5 }
+        ],
         description: "Explore the world of Stranger Things",
         houseId: 1
     },
     {
         title: "Squid Game",
         type: "primary",
-        posX: 48.8,
-        posY: 32.6,
+        points: [
+            { x: 48.8, y: 32.6 },
+            { x: 50.8, y: 32.6 },
+            { x: 50.8, y: 34.6 },
+            { x: 48.8, y: 34.6 }
+        ],
         description: "Experience the Squid Game universe",
         houseId: 1
     },
     {
         title: "Bridgerton",
         type: "primary",
-        posX: 29.3,
-        posY: 58.6,
+        points: [
+            { x: 29.3, y: 58.6 },
+            { x: 31.3, y: 58.6 },
+            { x: 31.3, y: 60.6 },
+            { x: 29.3, y: 60.6 }
+        ],
         description: "Step into the world of Bridgerton",
         houseId: 1
     },
     {
         title: "Wednesday",
         type: "primary",
-        posX: 68.4,
-        posY: 45.6,
+        points: [
+            { x: 68.4, y: 45.6 },
+            { x: 70.4, y: 45.6 },
+            { x: 70.4, y: 47.6 },
+            { x: 68.4, y: 47.6 }
+        ],
         description: "Visit Wednesday's world",
         houseId: 1
     },
@@ -48,32 +64,48 @@ const defaultHotspots = [
     {
         title: "The Crown",
         type: "primary",
-        posX: 25.5,
-        posY: 25.5,
+        points: [
+            { x: 25.5, y: 25.5 },
+            { x: 27.5, y: 25.5 },
+            { x: 27.5, y: 27.5 },
+            { x: 25.5, y: 27.5 }
+        ],
         description: "Experience the royal drama",
         houseId: 2
     },
     {
         title: "The Witcher",
         type: "primary",
-        posX: 55.8,
-        posY: 35.6,
+        points: [
+            { x: 55.8, y: 35.6 },
+            { x: 57.8, y: 35.6 },
+            { x: 57.8, y: 37.6 },
+            { x: 55.8, y: 37.6 }
+        ],
         description: "Enter the world of The Witcher",
         houseId: 2
     },
     {
         title: "Money Heist",
         type: "primary",
-        posX: 35.3,
-        posY: 65.6,
+        points: [
+            { x: 35.3, y: 65.6 },
+            { x: 37.3, y: 65.6 },
+            { x: 37.3, y: 67.6 },
+            { x: 35.3, y: 67.6 }
+        ],
         description: "Join the heist",
         houseId: 2
     },
     {
         title: "Dark",
         type: "primary",
-        posX: 75.4,
-        posY: 40.6,
+        points: [
+            { x: 75.4, y: 40.6 },
+            { x: 77.4, y: 40.6 },
+            { x: 77.4, y: 42.6 },
+            { x: 75.4, y: 42.6 }
+        ],
         description: "Explore the mysteries of Dark",
         houseId: 2
     }
