@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const { MongoClient } = require('mongodb');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
@@ -68,6 +69,13 @@ const connectWithRetry = async () => {
         const sanitizedUri = MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//****:****@');
         console.log('Attempting to connect to MongoDB:', sanitizedUri);
 
+        // First try direct MongoDB connection
+        const client = new MongoClient(MONGODB_URI);
+        await client.connect();
+        console.log('Direct MongoDB connection successful');
+        await client.close();
+
+        // Then connect with Mongoose
         await mongoose.connect(MONGODB_URI, {
             useNewUrlParser: true,
             useUnifiedTopology: true,
@@ -76,7 +84,7 @@ const connectWithRetry = async () => {
             serverSelectionTimeoutMS: 5000,
             socketTimeoutMS: 45000,
         });
-        console.log('Connected to MongoDB Atlas');
+        console.log('Connected to MongoDB Atlas with Mongoose');
         
         // Start server only after successful database connection
         app.listen(PORT, () => {
