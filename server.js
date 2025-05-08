@@ -10,18 +10,23 @@ const hotspotRoutes = require('./routes/hotspots');
 const app = express();
 const upload = multer();
 
+// Set environment
+const isProduction = process.env.NODE_ENV === 'production';
+
 // Security headers middleware
 app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    if (isProduction) {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
     next();
 });
 
 // Middleware
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' 
+    origin: isProduction 
         ? ['https://nfhaerialproto-production.up.railway.app', 'https://www.netflixhouse.com'] 
         : 'http://localhost:3000',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -32,15 +37,16 @@ app.use(express.json());
 // Debug middleware to log requests
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-    console.log('Request headers:', req.headers);
+    if (!isProduction) {
+        console.log('Request headers:', req.headers);
+    }
     next();
 });
 
-// Serve static files with detailed logging
+// Serve static files
 app.use('/admin', express.static(path.join(__dirname, 'admin'), {
-    setHeaders: (res, path) => {
-        console.log('Serving static file:', path);
-        if (path.endsWith('.js')) {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.js')) {
             res.setHeader('Content-Type', 'application/javascript');
         }
     }
@@ -63,13 +69,14 @@ mongoose.connect(MONGODB_URI, {
         // Start server only after successful database connection
         app.listen(PORT, () => {
             console.log(`Server is running on port ${PORT}`);
-            console.log(`Admin panel available at: http://localhost:${PORT}/admin`);
+            console.log(`Environment: ${isProduction ? 'Production' : 'Development'}`);
+            console.log(`Admin panel available at: ${isProduction ? 'https://nfhaerialproto-production.up.railway.app/admin' : `http://localhost:${PORT}/admin`}`);
             console.log('Current directory:', __dirname);
         });
     })
     .catch(err => {
         console.error('MongoDB connection error:', err);
-        process.exit(1); // Exit if we can't connect to the database
+        process.exit(1);
     });
 
 // Add connection error handler
