@@ -4,6 +4,8 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 const multer = require('multer');
+const assetRoutes = require('./routes/assets');
+const hotspotRoutes = require('./routes/hotspots');
 
 const app = express();
 const upload = multer();
@@ -26,19 +28,18 @@ app.use('/admin', express.static(path.join(__dirname, 'admin'), {
 }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/netflix-prototype', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-})
-.then(() => console.log('Connected to MongoDB'))
-.catch(err => console.error('MongoDB connection error:', err));
+// Environment variables
+const PORT = process.env.PORT || 3000;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/netflix-house';
+
+// Connect to MongoDB
+mongoose.connect(MONGODB_URI)
+    .then(() => console.log('Connected to MongoDB'))
+    .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
-const hotspotsRouter = require('./routes/hotspots');
-const assetsRouter = require('./routes/assets');
-app.use('/api/hotspots', hotspotsRouter);
-app.use('/api/assets', assetsRouter);
+app.use('/api/assets', assetRoutes);
+app.use('/api/hotspots', hotspotRoutes);
 
 // Playlist Schema
 const playlistSchema = new mongoose.Schema({
@@ -153,7 +154,7 @@ app.use((req, res) => {
     res.status(404).send('Not Found');
 });
 
-const PORT = process.env.PORT || 3000;
+// Start server
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
     console.log(`Admin panel available at: http://localhost:${PORT}/admin`);
