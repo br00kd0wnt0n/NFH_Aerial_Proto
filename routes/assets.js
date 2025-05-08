@@ -123,14 +123,19 @@ router.delete('/:id', async (req, res) => {
             return res.status(404).json({ error: 'Asset not found' });
         }
 
-        // Delete the file
-        const filePath = path.join(__dirname, '../public', asset.url);
+        // Delete the file from the filesystem
+        const filePath = path.join(__dirname, '..', asset.url);
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
+            console.log('Deleted file:', filePath);
+        } else {
+            console.log('File not found:', filePath);
         }
 
         // Delete from database
         await asset.deleteOne();
+        console.log('Deleted asset from database:', asset._id);
+
         res.json({ message: 'Asset deleted successfully' });
     } catch (error) {
         console.error('Error deleting asset:', error);

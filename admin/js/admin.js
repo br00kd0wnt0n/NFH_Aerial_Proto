@@ -1737,4 +1737,35 @@ document.addEventListener('DOMContentLoaded', async () => {
             updatePreview();
         }, 250); // Debounce resize events
     });
+
+    // Delete asset function
+    async function deleteAsset(assetId) {
+        try {
+            if (!confirm('Are you sure you want to delete this asset?')) {
+                return;
+            }
+
+            const response = await fetch(`/api/assets/${assetId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to delete asset');
+            }
+
+            // Reload assets after successful deletion
+            await loadAssets(assetHouseSelector.value);
+            
+            // Show success message
+            const toast = new bootstrap.Toast(document.getElementById('uploadToast'));
+            document.querySelector('#uploadToast .toast-body').textContent = 'Asset deleted successfully';
+            toast.show();
+        } catch (error) {
+            console.error('Error deleting asset:', error);
+            alert('Failed to delete asset. Please try again.');
+        }
+    }
+
+    // Make deleteAsset available globally
+    window.deleteAsset = deleteAsset;
 }); 
