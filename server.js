@@ -22,7 +22,7 @@ app.use((req, res, next) => {
 // Middleware
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
-        ? ['https://netflix-house-prototype.up.railway.app', 'https://www.netflixhouse.com'] 
+        ? ['https://nfhaerialproto-production.up.railway.app', 'https://www.netflixhouse.com'] 
         : 'http://localhost:3000',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
