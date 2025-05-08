@@ -1789,7 +1789,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            const formData = new FormData(uploadAssetForm);
+            const formData = new FormData();
+            const fileInput = document.getElementById('assetFile');
+            const typeInput = document.getElementById('assetType');
+            
+            if (!fileInput.files[0]) {
+                uploadToastElement.querySelector('.toast-body').textContent = 'Please select a file to upload';
+                uploadToast.show();
+                return;
+            }
+
+            formData.append('assetFile', fileInput.files[0]);
+            formData.append('type', typeInput.value);
             formData.append('houseId', assetHouseSelector.value);
 
             try {
@@ -1799,7 +1810,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to upload asset');
+                    const errorText = await response.text();
+                    throw new Error(errorText || 'Failed to upload asset');
                 }
 
                 // Close modal
@@ -1817,7 +1829,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await loadAssets(assetHouseSelector.value);
             } catch (error) {
                 console.error('Error uploading asset:', error);
-                uploadToastElement.querySelector('.toast-body').textContent = 'Failed to upload asset. Please try again.';
+                uploadToastElement.querySelector('.toast-body').textContent = 'Failed to upload asset: ' + error.message;
                 uploadToast.show();
             }
         });

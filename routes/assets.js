@@ -60,7 +60,7 @@ router.post('/', upload.single('assetFile'), async (req, res) => {
             body: req.body
         });
 
-        const { houseId, type, hotspotId } = req.body;
+        const { houseId, type } = req.body;
         
         if (!req.file) {
             console.error('No file uploaded');
@@ -86,9 +86,6 @@ router.post('/', upload.single('assetFile'), async (req, res) => {
 
         // Delete existing asset of the same type if it exists
         const query = { houseId: parseInt(houseId), type };
-        if (type === 'hotspot') {
-            query.hotspotId = hotspotId;
-        }
         await Asset.deleteMany(query);
 
         // Create new asset with default playback rules
@@ -97,7 +94,6 @@ router.post('/', upload.single('assetFile'), async (req, res) => {
             type,
             url: `/uploads/${req.file.filename}`,
             houseId: parseInt(houseId),
-            hotspotId: type === 'hotspot' ? hotspotId : undefined,
             playbackRules: {
                 loop: type === 'aerial',
                 autoplay: true,
@@ -111,7 +107,7 @@ router.post('/', upload.single('assetFile'), async (req, res) => {
         res.json({ asset });
     } catch (error) {
         console.error('Error uploading asset:', error);
-        res.status(500).json({ error: 'Failed to upload asset' });
+        res.status(500).json({ error: error.message });
     }
 });
 
