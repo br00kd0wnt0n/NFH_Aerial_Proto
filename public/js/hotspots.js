@@ -116,6 +116,12 @@ class HotspotManager {
 
         createVideoContainer(this.transitionView);
         createVideoContainer(this.floorLevelView);
+
+        // Ensure state indicator and asset label are always visible
+        if (this.stateIndicator) {
+            this.stateIndicator.style.display = 'block';
+            this.stateIndicator.style.zIndex = '2000';
+        }
     }
     
     initializeEventListeners() {
@@ -233,13 +239,36 @@ class HotspotManager {
             if (globalPlaylist.aerial && globalPlaylist.aerial.videoId) {
                 const aerialAsset = assets.find(a => a._id === globalPlaylist.aerial.videoId);
                 if (aerialAsset) {
-                    this.aerialVideo.src = aerialAsset.url;
-                    this.aerialVideo.loop = true;
-                    this.aerialVideo.autoplay = true;
-                    this.aerialVideo.muted = true;
-                    this.aerialVideo.playsInline = true;
-                    this.aerialVideo.preload = 'auto';
-                    await this.aerialVideo.load();
+                    // Get the aerial video element
+                    const aerialVideo = document.getElementById('aerialVideo');
+                    if (!aerialVideo) {
+                        console.error('Aerial video element not found');
+                        return;
+                    }
+
+                    // Set video properties
+                    aerialVideo.src = aerialAsset.url;
+                    aerialVideo.loop = true;
+                    aerialVideo.autoplay = true;
+                    aerialVideo.muted = true;
+                    aerialVideo.playsInline = true;
+                    aerialVideo.preload = 'auto';
+
+                    // Add event listeners for video loading
+                    aerialVideo.addEventListener('loadedmetadata', () => {
+                        console.log('Aerial video metadata loaded:', {
+                            width: aerialVideo.videoWidth,
+                            height: aerialVideo.videoHeight
+                        });
+                        this.renderHotspots(); // Re-render hotspots with correct dimensions
+                    });
+
+                    aerialVideo.addEventListener('error', (e) => {
+                        console.error('Error loading aerial video:', e);
+                    });
+
+                    // Load the video
+                    await aerialVideo.load();
                     console.log('Loaded aerial video from playlist:', aerialAsset.url);
                     
                     // Add asset label for aerial video
@@ -259,7 +288,7 @@ class HotspotManager {
                         existingClock.remove();
                     }
                     const clock = this.createPlaybackClock(videoContainer);
-                    this.updatePlaybackClock(this.aerialVideo, clock);
+                    this.updatePlaybackClock(aerialVideo, clock);
                     this.playbackClocks.set('aerial', clock);
                 } else {
                     console.log('Aerial video from playlist not found in assets');
@@ -296,72 +325,152 @@ class HotspotManager {
     
     renderHotspots() {
         // Clear existing hotspots
-        this.hotspotContainer.innerHTML = '';
+        const container = document.querySelector('.hotspot-container');
+        container.innerHTML = '';
         
-        // Create SVG container
+        // Get the aerial video element
+        const aerialVideo = document.getElementById('aerialVideo');
+        const videoWidth = 1920;  // Fixed width for 16:9 aspect ratio
+        const videoHeight = 1080; // Fixed height for 16:9 aspect ratio
+        
+        // Get the container dimensions
+        const containerRect = container.getBoundingClientRect();
+        const containerWidth = containerRect.width;
+        const containerHeight = containerRect.height;
+        
+        // Calculate the scale factor to maintain aspect ratio
+        const scaleX = containerWidth / videoWidth;
+        const scaleY = containerHeight / videoHeight;
+        const scale = Math.min(scaleX, scaleY);
+        
+        // Calculate the centered position
+        const scaledWidth = videoWidth * scale;
+        const scaledHeight = videoHeight * scale;
+        const offsetX = (containerWidth - scaledWidth) / 2;
+        const offsetY = (containerHeight - scaledHeight) / 2;
+        
+        console.log('Container dimensions:', {
+            containerWidth,
+            containerHeight,
+            videoWidth,
+            videoHeight,
+            scale,
+            scaledWidth,
+            scaledHeight,
+            offsetX,
+            offsetY
+        });
+        
+        // Create SVG container with 16:9 aspect ratio viewBox
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('width', '100%');
         svg.setAttribute('height', '100%');
+        svg.setAttribute('viewBox', '0 0 1920 1080'); // Match video dimensions exactly
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         svg.style.position = 'absolute';
         svg.style.top = '0';
         svg.style.left = '0';
-        svg.style.pointerEvents = 'none';
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        svg.style.pointerEvents = 'all';
+        svg.style.zIndex = '1000';
         
+        // Add polygons for each hotspot
         this.hotspots.forEach(hotspot => {
-            // Create hotspot group
+            console.log('Creating polygon for hotspot:', JSON.stringify(hotspot, null, 2));
+            
+            if (!hotspot.points || !Array.isArray(hotspot.points) || hotspot.points.length < 3) {
+                console.error('Invalid points data for hotspot:', JSON.stringify(hotspot, null, 2));
+                return;
+            }
+            
             const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             group.setAttribute('class', 'hotspot');
+            group.setAttribute('data-id', hotspot._id);
             group.style.pointerEvents = 'all';
             group.style.cursor = 'pointer';
+            group.style.transform = 'none';
+            group.style.transition = 'none';
             
-            // Create polygon
             const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-            const points = hotspot.points.map(p => `${p.x}%,${p.y}%`).join(' ');
-            polygon.setAttribute('points', points);
-            polygon.style.fill = 'transparent';
-            polygon.style.stroke = hotspot.type === 'primary' ? '#e50914' : '#ff4d4d';
-            polygon.style.strokeWidth = '2';
-            group.appendChild(polygon);
             
-            // Add text label
-            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            const center = this.calculatePolygonCenter(hotspot.points);
-            text.setAttribute('x', `${center.x}%`);
-            text.setAttribute('y', `${center.y}%`);
-            text.textContent = hotspot.title;
-            text.style.fill = '#fff';
-            text.style.fontSize = '12px';
-            text.style.textAnchor = 'middle';
-            text.style.dominantBaseline = 'middle';
-            text.style.pointerEvents = 'none';
-            group.appendChild(text);
+            // Convert percentage coordinates to actual pixel coordinates
+            const pointsString = hotspot.points.map(p => {
+                const x = (p.x / 100) * videoWidth;
+                const y = (p.y / 100) * videoHeight;
+                return `${x},${y}`;
+            }).join(' ');
             
-            // Add click handler
-            group.addEventListener('click', (e) => {
-                const rect = this.hotspotContainer.getBoundingClientRect();
-                const x = ((e.clientX - rect.left) / rect.width) * 100;
-                const y = ((e.clientY - rect.top) / rect.height) * 100;
-                
-                if (this.isPointInPolygon({ x, y }, hotspot.points)) {
-                    this.handleHotspotClick(hotspot);
-                }
+            console.log('Setting polygon points:', pointsString);
+            
+            // Set points attribute
+            polygon.setAttribute('points', pointsString);
+            
+            // Verify points were set
+            const points = polygon.getAttribute('points');
+            console.log('Verified polygon points:', points);
+            
+            if (!points || !points.trim()) {
+                console.error('Failed to set points on polygon');
+                return;
+            }
+            
+            // Set default styles using SVG attributes
+            polygon.setAttribute('fill', 'rgba(229, 9, 20, 0)'); // Completely transparent
+            polygon.setAttribute('stroke', 'rgba(229, 9, 20, 0)'); // Transparent stroke
+            polygon.setAttribute('stroke-width', '0.5');
+            polygon.setAttribute('stroke-dasharray', '2,2');
+            polygon.setAttribute('stroke-linecap', 'round');
+            polygon.setAttribute('stroke-linejoin', 'round');
+            polygon.style.transition = 'fill 0.2s ease, stroke 0.2s ease';
+            
+            // Add hover effect - show fill and stroke on hover
+            group.addEventListener('mouseover', function() {
+                polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.4)');
+                polygon.setAttribute('stroke', hotspot.type === 'primary' ? '#e50914' : '#ff4d4d');
             });
             
+            group.addEventListener('mouseout', function() {
+                polygon.setAttribute('fill', 'rgba(229, 9, 20, 0)');
+                polygon.setAttribute('stroke', 'rgba(229, 9, 20, 0)');
+            });
+            
+            // Add click handler
+            group.addEventListener('click', () => this.handleHotspotClick(hotspot));
+            
+            group.appendChild(polygon);
             svg.appendChild(group);
         });
         
-        this.hotspotContainer.appendChild(svg);
+        container.appendChild(svg);
+        
+        // Log the final SVG structure
+        console.log('Final SVG structure:', svg.innerHTML);
     }
     
     calculatePolygonCenter(points) {
-        const sum = points.reduce((acc, point) => ({
+        if (!points || points.length === 0) {
+            return { x: 0, y: 0 };
+        }
+
+        // Ensure all points have valid numeric values
+        const validPoints = points.filter(point => 
+            typeof point.x === 'number' && !isNaN(point.x) &&
+            typeof point.y === 'number' && !isNaN(point.y)
+        );
+
+        if (validPoints.length === 0) {
+            return { x: 0, y: 0 };
+        }
+
+        const sum = validPoints.reduce((acc, point) => ({
             x: acc.x + point.x,
             y: acc.y + point.y
         }), { x: 0, y: 0 });
         
         return {
-            x: sum.x / points.length,
-            y: sum.y / points.length
+            x: parseFloat((sum.x / validPoints.length).toFixed(2)),
+            y: parseFloat((sum.y / validPoints.length).toFixed(2))
         };
     }
     
@@ -385,6 +494,7 @@ class HotspotManager {
         if (hotspot.type === 'primary') {
             // Handle primary hotspot click
             this.showTransition(hotspot._id);
+            this.stateIndicator.textContent = 'Current State: Transition View';
         } else if (hotspot.type === 'secondary') {
             // Handle secondary hotspot click
             this.showInfoPanel(hotspot);
@@ -393,14 +503,9 @@ class HotspotManager {
     
     async showTransition(hotspotId) {
         try {
-            // Hide house selector and update button when transitioning
-            const houseSelector = document.querySelector('.house-selector');
-            const updateButton = document.getElementById('updateButton');
-            if (houseSelector) {
-                houseSelector.style.display = 'none';
-            }
-            if (updateButton) {
-                updateButton.style.display = 'none';
+            // Hide house selector when transitioning
+            if (this.houseSelector) {
+                this.houseSelector.style.display = 'none';
             }
 
             console.log('Starting transition for hotspot:', hotspotId);
@@ -516,6 +621,7 @@ class HotspotManager {
             const label = document.createElement('div');
             label.className = 'asset-label';
             label.textContent = `Dive-in Video: ${diveInAsset.name || 'Unnamed'}`;
+            label.style.zIndex = '2000';
             videoContainer.appendChild(label);
 
             // After creating newVideo and before showing transition view
@@ -575,15 +681,13 @@ class HotspotManager {
     
     async showFloorLevel(playlist, hotspotId) {
         try {
-            // Hide house selector and update button when showing floor level
-            const houseSelector = document.querySelector('.house-selector');
-            const updateButton = document.getElementById('updateButton');
-            if (houseSelector) {
-                houseSelector.style.display = 'none';
+            // Hide house selector when showing floor level
+            if (this.houseSelector) {
+                this.houseSelector.style.display = 'none';
             }
-            if (updateButton) {
-                updateButton.style.display = 'none';
-            }
+
+            // Update state indicator
+            this.stateIndicator.textContent = 'Current State: Floor Level View';
 
             // If no playlist was provided, try to get it
             if (!playlist) {
@@ -648,9 +752,10 @@ class HotspotManager {
             newFloorLevelVideo.addEventListener('canplay', () => console.log('Floor level video can play'));
             newFloorLevelVideo.addEventListener('playing', () => console.log('Floor level video is playing'));
             newFloorLevelVideo.addEventListener('error', (e) => console.error('Floor level video error:', e));
-            newFloorLevelVideo.addEventListener('ended', () => {
-                console.log('Floor level video ended, returning to aerial view');
-                this.handleBackToAerial();
+            newFloorLevelVideo.addEventListener('ended', async () => {
+                console.log('Floor level video ended, playing zoom out video');
+                // Play zoom out video instead of returning to aerial view
+                await this.playZoomOutVideo(playlist, hotspotId);
             });
 
             // Clear and update video placeholder
@@ -708,14 +813,10 @@ class HotspotManager {
         this.aerialView.style.display = 'block';
         this.aerialVideo.play();
         this.stateIndicator.textContent = 'Current State: Aerial View';
-        // Show house selector and update button again when returning to aerial view
-        const houseSelector = document.querySelector('.house-selector');
-        const updateButton = document.getElementById('updateButton');
-        if (houseSelector) {
-            houseSelector.style.display = 'block';
-        }
-        if (updateButton) {
-            updateButton.style.display = 'block';
+        
+        // Show house selector when returning to aerial view
+        if (this.houseSelector) {
+            this.houseSelector.style.display = 'block';
         }
     }
     
@@ -790,17 +891,22 @@ class HotspotManager {
             if (!playlistResponse.ok) throw new Error('Failed to load playlist');
             const playlistData = await playlistResponse.json();
             
-            // Get the global playlist
-            const globalPlaylist = playlistData.playlists.global;
-            if (!globalPlaylist || !globalPlaylist.zoomOut || !globalPlaylist.zoomOut.videoId) {
-                throw new Error('Zoom out video not found in global playlist');
+            // Get the playlist for the current hotspot
+            const currentHotspot = this.currentHotspot;
+            if (!currentHotspot) {
+                throw new Error('No current hotspot found');
+            }
+
+            const playlist = playlistData.playlists[currentHotspot._id];
+            if (!playlist || !playlist.zoomOut || !playlist.zoomOut.videoId) {
+                throw new Error('Zoom out video not found in playlist');
             }
 
             // Get the zoom out video asset
             const assetsResponse = await fetch(`/api/assets?houseId=${this.currentHouse}`);
             if (!assetsResponse.ok) throw new Error('Failed to load assets');
             const assetsData = await assetsResponse.json();
-            const zoomOutAsset = assetsData.assets.find(a => a._id === globalPlaylist.zoomOut.videoId);
+            const zoomOutAsset = assetsData.assets.find(a => a._id === playlist.zoomOut.videoId);
             
             if (!zoomOutAsset) {
                 throw new Error('Zoom out video not found in assets');
@@ -831,15 +937,18 @@ class HotspotManager {
             videoPlaceholder.innerHTML = '';
             videoPlaceholder.appendChild(newVideo);
 
-            // After creating newVideo and before showing transition view
-            const zoomOutContainer = this.transitionView.querySelector('.video-container');
-            
+            // Add asset label
+            const label = document.createElement('div');
+            label.className = 'asset-label';
+            label.textContent = `Zoom Out Video: ${zoomOutAsset.name || 'Unnamed'}`;
+            videoContainer.appendChild(label);
+
             // Add playback clock for zoom out video
-            const existingClock = zoomOutContainer.querySelector('.playback-clock');
+            const existingClock = videoContainer.querySelector('.playback-clock');
             if (existingClock) {
                 existingClock.remove();
             }
-            const clock = this.createPlaybackClock(zoomOutContainer);
+            const clock = this.createPlaybackClock(videoContainer);
             this.updatePlaybackClock(newVideo, clock);
             this.playbackClocks.set('zoomOut', clock);
 
@@ -865,25 +974,10 @@ class HotspotManager {
                 }, 1000);
             }
 
-            // When video ends, return to aerial view
+            // When zoom out video ends, return to aerial view
             newVideo.onended = () => {
-                this.transitionView.style.display = 'none';
-                this.aerialView.style.display = 'block';
-                
-                // Resume aerial video from beginning
-                this.aerialVideo.currentTime = 0;
-                this.aerialVideo.play();
-                
-                this.stateIndicator.textContent = 'Current State: Aerial View';
-                // Show house selector and update button again when returning to aerial view
-                const houseSelector = document.querySelector('.house-selector');
-                const updateButton = document.getElementById('updateButton');
-                if (houseSelector) {
-                    houseSelector.style.display = 'block';
-                }
-                if (updateButton) {
-                    updateButton.style.display = 'block';
-                }
+                console.log('Zoom out video ended, returning to aerial view');
+                this.returnToAerial();
             };
         } catch (error) {
             console.error('Error in handleBackToAerial:', error);
@@ -897,15 +991,6 @@ class HotspotManager {
                 this.aerialVideo.currentTime = 0;
                 this.aerialVideo.play();
                 this.stateIndicator.textContent = 'Current State: Aerial View';
-                // Show house selector and update button again when returning to aerial view
-                const houseSelector = document.querySelector('.house-selector');
-                const updateButton = document.getElementById('updateButton');
-                if (houseSelector) {
-                    houseSelector.style.display = 'block';
-                }
-                if (updateButton) {
-                    updateButton.style.display = 'block';
-                }
             }, 3000);
         }
     }
@@ -990,6 +1075,108 @@ class HotspotManager {
         
         video.addEventListener('timeupdate', updateTime);
         updateTime(); // Initial update
+    }
+
+    // Add new method to play zoom out video
+    async playZoomOutVideo(playlist, hotspotId) {
+        try {
+            // Hide house selector during zoom out
+            if (this.houseSelector) {
+                this.houseSelector.style.display = 'none';
+            }
+
+            if (!playlist || !playlist.zoomOut || !playlist.zoomOut.videoId) {
+                console.log('No zoom out video assigned, returning to aerial view');
+                this.returnToAerial();
+                return;
+            }
+
+            // Update state indicator
+            this.stateIndicator.textContent = 'Current State: Zoom Out View';
+
+            // Get the zoom out video asset
+            const assetsResponse = await fetch(`/api/assets?houseId=${this.currentHouse}`);
+            if (!assetsResponse.ok) throw new Error('Failed to load assets');
+            const assetsData = await assetsResponse.json();
+            const zoomOutAsset = assetsData.assets.find(a => a._id === playlist.zoomOut.videoId);
+            
+            if (!zoomOutAsset) {
+                console.log('Zoom out video not found, returning to aerial view');
+                this.returnToAerial();
+                return;
+            }
+
+            // Get video container and placeholder
+            const videoContainer = this.transitionView.querySelector('.video-container');
+            const videoPlaceholder = videoContainer.querySelector('.video-placeholder');
+
+            // Create new video element
+            const newVideo = document.createElement('video');
+            newVideo.className = 'preview-video';
+            newVideo.muted = true;
+            newVideo.playsInline = true;
+            newVideo.autoplay = true;
+            newVideo.loop = false;
+            newVideo.style.cssText = `
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                position: absolute;
+                top: 0;
+                left: 0;
+            `;
+            newVideo.src = zoomOutAsset.url;
+
+            // Clear and update video placeholder
+            videoPlaceholder.innerHTML = '';
+            videoPlaceholder.appendChild(newVideo);
+
+            // Add asset label
+            const label = document.createElement('div');
+            label.className = 'asset-label';
+            label.textContent = `Zoom Out Video: ${zoomOutAsset.name || 'Unnamed'}`;
+            videoContainer.appendChild(label);
+
+            // Add playback clock for zoom out video
+            const existingClock = videoContainer.querySelector('.playback-clock');
+            if (existingClock) {
+                existingClock.remove();
+            }
+            const clock = this.createPlaybackClock(videoContainer);
+            this.updatePlaybackClock(newVideo, clock);
+            this.playbackClocks.set('zoomOut', clock);
+
+            // Show transition view
+            this.floorLevelView.style.display = 'none';
+            this.transitionView.style.display = 'block';
+
+            // Reset and play the video
+            newVideo.currentTime = 0;
+            try {
+                await newVideo.play();
+                console.log('Playing zoom out video');
+            } catch (error) {
+                console.error('Error playing zoom out video:', error);
+                // Try to play again after a short delay
+                setTimeout(async () => {
+                    try {
+                        await newVideo.play();
+                        console.log('Playing zoom out video after retry');
+                    } catch (retryError) {
+                        console.error('Error playing zoom out video after retry:', retryError);
+                    }
+                }, 1000);
+            }
+
+            // When zoom out video ends, return to aerial view
+            newVideo.onended = () => {
+                console.log('Zoom out video ended, returning to aerial view');
+                this.returnToAerial();
+            };
+        } catch (error) {
+            console.error('Error in playZoomOutVideo:', error);
+            this.returnToAerial();
+        }
     }
 }
 

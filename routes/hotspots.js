@@ -39,9 +39,11 @@ router.post('/', async (req, res) => {
         const validatedHotspots = hotspots.map(hotspot => ({
             title: hotspot.title,
             type: hotspot.type,
-            posX: parseFloat(hotspot.posX),
-            posY: parseFloat(hotspot.posY),
             description: hotspot.description || '',
+            points: hotspot.points.map(point => ({
+                x: parseFloat(point.x),
+                y: parseFloat(point.y)
+            })),
             houseId: parseInt(houseId)
         }));
 

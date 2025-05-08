@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let assets = []; // Add global assets array
 
     // Initialize DOM elements
-    const hotspotModal = new bootstrap.Modal(document.getElementById('hotspotModal'));
+    const hotspotModal = document.getElementById('hotspotModal');
     const hotspotForm = document.getElementById('hotspotForm');
     const addHotspotBtn = document.getElementById('addHotspotBtn');
     const saveHotspotBtn = document.getElementById('saveHotspotBtn');
@@ -32,15 +32,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const cancelDrawingBtn = document.getElementById('cancelDrawing');
     const assetTypeSelect = document.getElementById('assetType');
     const hotspotIdContainer = document.getElementById('hotspotIdContainer');
+    const hotspotPreview = document.getElementById('hotspotPreview');
+    const previewVideo = document.getElementById('previewVideo');
 
     // Drawing state
     let isDrawing = false;
     let currentPoints = [];
-    let currentHotspot = null;
+    let currentPolygon = null;
+    let currentPointsGroup = null;
+    let drawingInstructions = null;
 
     // Navigation event handlers
     navButtons.forEach(button => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', async () => {
             const targetSection = button.dataset.section;
             sections.forEach(section => {
                 section.style.display = section.id === `${targetSection}Section` ? 'block' : 'none';
@@ -50,17 +54,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Load hotspots when switching to Assets section
             if (targetSection === 'assets') {
-                loadHotspots(currentHouse);
-                loadAssets(currentHouse);
+                await loadHotspots(currentHouse);
+                await loadAssets(currentHouse);
             }
             // Load playlists when switching to Playlists section
             else if (targetSection === 'playlists') {
-                loadPlaylists(currentHouse).then(playlists => {
-                    updatePlaylistUI(playlists);
-                });
+                console.log('Loading playlists for house:', currentHouse);
+                const playlists = await loadPlaylists(currentHouse);
+                console.log('Loaded playlists:', playlists);
+                updatePlaylistUI(playlists);
             }
             // Refresh hotspot positions when switching to Hotspots section
             else if (targetSection === 'hotspots') {
+                await loadHotspots(currentHouse);
                 loadHotspots(currentHouse).then(() => {
                     updateHotspotList();
                     updatePreview();
@@ -300,7 +306,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(playlists)
+                body: JSON.stringify({
+                    houseId: parseInt(houseId),
+                    playlists: playlists
+                })
             });
 
             if (!response.ok) {
@@ -700,433 +709,376 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Add new hotspot
     addHotspotBtn.addEventListener('click', () => {
-        editingHotspotId = null;
+        // Reset state
         hotspotForm.reset();
-        hotspotModal.show();
+        currentPolygon = null;
+        currentPoints = [];
+        if (currentPointsGroup) {
+            currentPointsGroup.remove();
+            currentPointsGroup = null;
+        }
+
+        // Enable/disable buttons
+        startDrawingBtn.disabled = false;
+        finishDrawingBtn.disabled = true;
+        cancelDrawingBtn.disabled = true;
+
+        // Create and show drawing instructions
+        if (!drawingInstructions) {
+            drawingInstructions = document.createElement('div');
+            drawingInstructions.className = 'drawing-instructions';
+            drawingInstructions.style.cssText = `
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 20px;
+                border-radius: 8px;
+                text-align: center;
+                z-index: 1000;
+            `;
+            previewContainer.appendChild(drawingInstructions);
+        }
+        drawingInstructions.innerHTML = `
+            <h4>Create New Hotspot</h4>
+            <p>1. Click "Start Drawing" to begin</p>
+            <p>2. Click on the preview to create points</p>
+            <p>3. Create at least 3 points to form a polygon</p>
+            <p>4. Click "Finish Drawing" when done</p>
+        `;
+        drawingInstructions.style.display = 'block';
+    });
+
+    // Drawing Functions
+    startDrawingBtn.addEventListener('click', () => {
+        isDrawing = true;
+        currentPoints = [];
+        
+        // Clear any existing SVG
+        const existingSvg = previewContainer.querySelector('svg');
+        if (existingSvg) {
+            existingSvg.remove();
+        }
+        
+        // Create new SVG container
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', '100%');
+        svg.setAttribute('viewBox', '0 0 100 100');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.style.position = 'absolute';
+        svg.style.top = '0';
+        svg.style.left = '0';
+        svg.style.pointerEvents = 'all';
+        svg.style.zIndex = '1000';
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        previewContainer.appendChild(svg);
+        
+        console.log('=== SVG Container Created ===');
+        console.log('SVG Element:', {
+            width: svg.getAttribute('width'),
+            height: svg.getAttribute('height'),
+            viewBox: svg.getAttribute('viewBox'),
+            style: svg.style.cssText
+        });
+        console.log('Container:', {
+            width: previewContainer.clientWidth,
+            height: previewContainer.clientHeight,
+            style: previewContainer.style.cssText
+        });
+        
+        // Create points group
+        currentPointsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        svg.appendChild(currentPointsGroup);
+        
+        // Create polygon
+        currentPolygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        currentPolygon.style.fill = 'rgba(229, 9, 20, 0.2)';
+        currentPolygon.style.stroke = '#e50914';
+        currentPolygon.style.strokeWidth = '0.5';
+        currentPolygon.style.strokeDasharray = '2,2';
+        currentPolygon.style.strokeLinecap = 'round';
+        currentPolygon.style.strokeLinejoin = 'round';
+        svg.appendChild(currentPolygon);
+        
+        // Add click handler to SVG
+        svg.addEventListener('click', handlePreviewClick);
+        
+        // Enable/disable buttons
+        startDrawingBtn.disabled = true;
+        finishDrawingBtn.disabled = false;
+        cancelDrawingBtn.disabled = false;
+        
+        // Hide instructions
+        if (drawingInstructions) {
+            drawingInstructions.style.display = 'none';
+        }
+
+        // Show drawing status
+        const status = document.createElement('div');
+        status.className = 'drawing-status';
+        status.style.cssText = `
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            z-index: 1001;
+        `;
+        status.textContent = 'Drawing mode active - Click to add points';
+        previewContainer.appendChild(status);
+
+        console.log('Drawing mode started');
+    });
+
+    function handlePreviewClick(e) {
+        if (!isDrawing) return;
+        
+        // Prevent event from bubbling
+        e.stopPropagation();
+        
+        // Get the preview container's dimensions and position
+        const containerRect = previewContainer.getBoundingClientRect();
+        
+        // Calculate click position relative to the container
+        const clickX = e.clientX - containerRect.left;
+        const clickY = e.clientY - containerRect.top;
+        
+        // Calculate percentage position within the container
+        const percentX = (clickX / containerRect.width) * 100;
+        const percentY = (clickY / containerRect.height) * 100;
+        
+        // Store the percentage coordinates
+        currentPoints.push({ 
+            x: parseFloat(percentX.toFixed(2)),
+            y: parseFloat(percentY.toFixed(2))
+        });
+        
+        console.log('=== Click Event Details ===');
+        console.log('Container:', {
+            width: containerRect.width,
+            height: containerRect.height,
+            left: containerRect.left,
+            top: containerRect.top
+        });
+        console.log('Mouse Position:', {
+            clientX: e.clientX,
+            clientY: e.clientY
+        });
+        console.log('Calculated Position:', {
+            clickX: clickX,
+            clickY: clickY,
+            percentX: percentX,
+            percentY: percentY
+        });
+        console.log('Current Points Array:', JSON.stringify(currentPoints, null, 2));
+        
+        // Draw point
+        const point = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        point.setAttribute('cx', percentX);
+        point.setAttribute('cy', percentY);
+        point.setAttribute('r', '1'); // Smaller radius for better precision
+        point.style.fill = '#e50914';
+        currentPointsGroup.appendChild(point);
+        
+        // Update polygon
+        const points = currentPoints.map(p => `${p.x},${p.y}`).join(' ');
+        currentPolygon.setAttribute('points', points);
+        
+        console.log('=== Polygon Details ===');
+        console.log('Points String:', points);
+        console.log('SVG Element:', {
+            width: currentPolygon.parentElement.getAttribute('width'),
+            height: currentPolygon.parentElement.getAttribute('height'),
+            viewBox: currentPolygon.parentElement.getAttribute('viewBox')
+        });
+        
+        // Update status
+        const status = previewContainer.querySelector('.drawing-status');
+        if (status) {
+            status.textContent = `Points: ${currentPoints.length} - Click to add more or click "Finish Drawing"`;
+        }
+        
+        // Enable finish button if we have enough points
+        finishDrawingBtn.disabled = currentPoints.length < 3;
+    }
+
+    finishDrawingBtn.addEventListener('click', () => {
+        if (currentPoints.length < 3) {
+            alert('Please draw at least 3 points to create a polygon');
+            return;
+        }
+        
+        isDrawing = false;
+        
+        // Remove click handler from SVG
+        const svg = previewContainer.querySelector('svg');
+        if (svg) {
+            svg.removeEventListener('click', handlePreviewClick);
+        }
+        
+        // Reset button states
+        startDrawingBtn.disabled = false;
+        finishDrawingBtn.disabled = true;
+        cancelDrawingBtn.disabled = true;
+        
+        // Remove status
+        const status = previewContainer.querySelector('.drawing-status');
+        if (status) {
+            status.remove();
+        }
+        
+        // Show modal
+        const modal = new bootstrap.Modal(hotspotModal);
+        modal.show();
+    });
+
+    cancelDrawingBtn.addEventListener('click', () => {
+        isDrawing = false;
+        currentPoints = [];
+        
+        // Remove click handler from SVG
+        const svg = previewContainer.querySelector('svg');
+        if (svg) {
+            svg.removeEventListener('click', handlePreviewClick);
+            svg.remove();
+        }
+        
+        if (currentPolygon) {
+            currentPolygon = null;
+        }
+        if (currentPointsGroup) {
+            currentPointsGroup = null;
+        }
+        
+        // Reset button states
+        startDrawingBtn.disabled = false;
+        finishDrawingBtn.disabled = true;
+        cancelDrawingBtn.disabled = true;
+        
+        if (drawingInstructions) {
+            drawingInstructions.style.display = 'block';
+        }
+        
+        // Remove status
+        const status = previewContainer.querySelector('.drawing-status');
+        if (status) {
+            status.remove();
+        }
     });
 
     // Save hotspot
-    saveHotspotBtn.addEventListener('click', () => {
-        if (hotspotForm.checkValidity()) {
-            const formData = new FormData(hotspotForm);
-            const hotspotData = {
-                _id: editingHotspotId || Date.now().toString(),
-                title: formData.get('title'),
-                type: formData.get('type'),
-                posX: parseFloat(formData.get('posX')),
-                posY: parseFloat(formData.get('posY')),
-                description: formData.get('description'),
-                houseId: currentHouse
-            };
-
-            if (editingHotspotId) {
-                const index = hotspots.findIndex(h => h._id === editingHotspotId);
-                if (index !== -1) {
-                    hotspots[index] = hotspotData;
-                }
-            } else {
-                hotspots.push(hotspotData);
-            }
-
-            updateHotspotList();
-            updatePreview();
-            saveHotspots();
-            hotspotModal.hide();
-        } else {
+    saveHotspotBtn.addEventListener('click', async () => {
+        if (!hotspotForm.checkValidity()) {
             hotspotForm.reportValidity();
-        }
-    });
-
-    // Update hotspot list
-    function updateHotspotList() {
-        console.log('Updating hotspot list for house:', currentHouse);
-        console.log('Current hotspots array:', hotspots);
-        const currentHotspots = hotspots.filter(h => h.houseId === currentHouse);
-        console.log('Filtered hotspots for current house:', currentHotspots);
-        
-        if (!hotspotList) {
-            console.error('Hotspot list element not found');
             return;
         }
-        
-        hotspotList.innerHTML = currentHotspots.map(hotspot => `
-            <div class="card bg-dark border-secondary mb-2 ${hotspot.type}">
-                <div class="card-body">
-                    <h6 class="card-title">${hotspot.title}</h6>
-                    <p class="card-text small">Type: ${hotspot.type === 'primary' ? 'Primary (IP Zone)' : 'Secondary (Info Panel)'}</p>
-                    <div class="btn-group">
-                        <button class="btn btn-sm btn-outline-light edit-hotspot" data-id="${hotspot._id}">Edit</button>
-                        <button class="btn btn-sm btn-outline-danger delete-hotspot" data-id="${hotspot._id}">Delete</button>
-                    </div>
-                </div>
-            </div>
-        `).join('');
 
-        // Add event listeners for edit and delete buttons
-        document.querySelectorAll('.edit-hotspot').forEach(button => {
-            button.addEventListener('click', () => {
-                const hotspotId = button.dataset.id;
-                const hotspot = hotspots.find(h => h._id === hotspotId);
-                if (hotspot) {
-                    editingHotspotId = hotspotId;
-                    document.getElementById('title').value = hotspot.title;
-                    document.getElementById('type').value = hotspot.type;
-                    document.getElementById('posX').value = hotspot.posX;
-                    document.getElementById('posY').value = hotspot.posY;
-                    document.getElementById('description').value = hotspot.description || '';
-                    hotspotModal.show();
-                }
-            });
-        });
+        const formData = new FormData(hotspotForm);
+        const hotspotData = {
+            title: formData.get('title'),
+            type: formData.get('type'),
+            description: formData.get('description') || '',
+            points: currentPoints.map(point => ({
+                x: parseFloat(point.x.toFixed(2)),
+                y: parseFloat(point.y.toFixed(2))
+            })),
+            houseId: currentHouse
+        };
 
-        document.querySelectorAll('.delete-hotspot').forEach(button => {
-            button.addEventListener('click', () => {
-                if (confirm('Are you sure you want to delete this hotspot?')) {
-                    const hotspotId = button.dataset.id;
-                    hotspots = hotspots.filter(h => h._id !== hotspotId);
-                    updateHotspotList();
-                    updatePreview();
-                    saveHotspots();
-                }
-            });
-        });
-    }
-
-    // Update preview
-    function updatePreview() {
-        const previewContainer = document.querySelector('.preview-container');
-        const hotspotPreview = document.getElementById('hotspotPreview');
-        
-        if (!previewContainer || !hotspotPreview) {
-            console.error('Preview container or hotspot preview not found');
+        // Validate required fields
+        if (!hotspotData.title || !hotspotData.type) {
+            alert('Please fill in all required fields (Title and Type)');
             return;
         }
-        
-        // Clear only the hotspot preview container
-        hotspotPreview.innerHTML = '';
-        
-        const currentHotspots = hotspots.filter(h => h.houseId === currentHouse);
-        console.log('Updating preview with hotspots:', currentHotspots);
-        
-        // Get container dimensions
-        const containerWidth = previewContainer.offsetWidth;
-        const containerHeight = previewContainer.offsetHeight;
-        
-        // Wait for the container to be fully rendered
-        requestAnimationFrame(() => {
-            currentHotspots.forEach(hotspot => {
-                // Ensure position values are within bounds
-                const posX = Math.max(0, Math.min(parseFloat(hotspot.posX), 100));
-                const posY = Math.max(0, Math.min(parseFloat(hotspot.posY), 100));
-                
-                // Convert percentage to pixels for initial position
-                const x = (posX / 100) * containerWidth;
-                const y = (posY / 100) * containerHeight;
-                
-                console.log(`Creating hotspot ${hotspot.title} at position:`, { x, y, posX, posY });
-                
-                const hotspotElement = document.createElement('div');
-                hotspotElement.className = `hotspot-preview ${hotspot.type}`;
-                hotspotElement.setAttribute('data-id', hotspot._id);
-                hotspotElement.setAttribute('data-x', x);
-                hotspotElement.setAttribute('data-y', y);
-                hotspotElement.style.transform = `translate(${x}px, ${y}px)`;
-                hotspotElement.textContent = hotspot.title;
-                
-                hotspotPreview.appendChild(hotspotElement);
-            });
 
-            // Reinitialize interact.js for new hotspots
-            interact('.hotspot-preview').draggable({
-                inertia: true,
-                modifiers: [
-                    interact.modifiers.restrictRect({
-                        restriction: 'parent',
-                        endOnly: false
-                    })
-                ],
-                autoScroll: true,
-                listeners: {
-                    move: dragMoveListener,
-                    end: function(event) {
-                        const hotspot = event.target;
-                        const rect = hotspot.getBoundingClientRect();
-                        const containerRect = previewContainer.getBoundingClientRect();
-                        
-                        // Calculate position relative to container
-                        const relativeX = rect.left - containerRect.left;
-                        const relativeY = rect.top - containerRect.top;
-                        
-                        // Convert to percentages
-                        const posX = Math.max(0, Math.min((relativeX / containerRect.width) * 100, 100));
-                        const posY = Math.max(0, Math.min((relativeY / containerRect.height) * 100, 100));
-                        
-                        // Update hotspot data
-                        const hotspotId = hotspot.getAttribute('data-id');
-                        const hotspotIndex = hotspots.findIndex(h => h._id === hotspotId);
-                        if (hotspotIndex !== -1) {
-                            hotspots[hotspotIndex].posX = posX;
-                            hotspots[hotspotIndex].posY = posY;
-                            updateHotspotList();
-                            saveHotspots();
-                        }
-                    }
-                }
-            });
-        });
-    }
+        // Validate points
+        if (!hotspotData.points || hotspotData.points.length < 3) {
+            alert('Please draw at least 3 points for the hotspot');
+            return;
+        }
 
-    // Save hotspots to server
-    async function saveHotspots() {
+        console.log('Saving hotspot with data:', JSON.stringify(hotspotData, null, 2));
+
         try {
-            const currentHotspots = hotspots.filter(h => h.houseId === currentHouse);
-            const formattedHotspots = currentHotspots.map(hotspot => ({
-                title: hotspot.title,
-                type: hotspot.type,
-                posX: parseFloat(hotspot.posX),
-                posY: parseFloat(hotspot.posY),
-                description: hotspot.description || '',
-                houseId: parseInt(hotspot.houseId)
-            }));
+            // First, get existing hotspots
+            const existingResponse = await fetch(`/api/hotspots?houseId=${currentHouse}`);
+            if (!existingResponse.ok) {
+                throw new Error('Failed to fetch existing hotspots');
+            }
+            const existingData = await existingResponse.json();
+            const existingHotspots = existingData.hotspots || [];
 
+            // Add new hotspot to existing ones
+            const updatedHotspots = [...existingHotspots, hotspotData];
+
+            // Save all hotspots
             const response = await fetch('/api/hotspots', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     houseId: currentHouse,
-                    hotspots: formattedHotspots
+                    hotspots: updatedHotspots
                 })
             });
-            
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to save hotspots');
-            }
-            
-            const data = await response.json();
-            hotspots = data.hotspots;
-            updateHotspotList();
-            updatePreview();
-        } catch (error) {
-            console.error('Error saving hotspots:', error);
-            alert('Failed to save hotspots. Please try again.');
-        }
-    }
-
-    // Asset Management
-    const uploadAssetBtn = document.getElementById('uploadAssetBtn');
-    const uploadAssetModal = new bootstrap.Modal(document.getElementById('uploadAssetModal'));
-    const uploadAssetForm = document.getElementById('uploadAssetForm');
-    const saveAssetBtn = document.getElementById('saveAssetBtn');
-
-    // Upload Asset button handler
-    uploadAssetBtn.addEventListener('click', () => {
-        uploadAssetForm.reset();
-        uploadAssetModal.show();
-    });
-
-    // Save Asset button handler
-    saveAssetBtn.addEventListener('click', async () => {
-        if (!uploadAssetForm.checkValidity()) {
-            uploadAssetForm.reportValidity();
-            return;
-        }
-
-        const formData = new FormData(uploadAssetForm);
-        formData.append('houseId', assetHouseSelector.value);
-        formData.append('type', formData.get('assetType'));
-        
-        // Rename the file field to match server expectation
-        const file = formData.get('assetFile');
-        formData.delete('assetFile');
-        formData.append('assetFile', file);
-
-        try {
-            saveAssetBtn.disabled = true;
-            saveAssetBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Uploading...';
-
-            const response = await fetch('/api/assets', {
-                method: 'POST',
-                body: formData
-            });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to upload asset');
-            }
-
-            uploadToastElement.querySelector('.toast-body').textContent = 'Asset uploaded successfully!';
-            uploadToast.show();
-            uploadAssetModal.hide();
-            await loadAssets(assetHouseSelector.value);
-        } catch (error) {
-            console.error('Error uploading asset:', error);
-            uploadToastElement.querySelector('.toast-body').textContent = 'Failed to upload asset. Please try again.';
-            uploadToast.show();
-        } finally {
-            saveAssetBtn.disabled = false;
-            saveAssetBtn.innerHTML = 'Upload';
-        }
-    });
-
-    // Delete asset
-    window.deleteAsset = async function(assetId) {
-        if (!confirm('Are you sure you want to delete this asset?')) return;
-        
-        try {
-            const response = await fetch(`/api/assets/${assetId}`, {
-                method: 'DELETE'
-            });
-            
-            if (!response.ok) {
-                throw new Error('Failed to delete asset');
-            }
-            
-            uploadToastElement.querySelector('.toast-body').textContent = 'Asset deleted successfully!';
-            uploadToast.show();
-            await loadAssets(assetHouseSelector.value);
-        } catch (error) {
-            console.error('Error deleting asset:', error);
-            uploadToastElement.querySelector('.toast-body').textContent = 'Failed to delete asset. Please try again.';
-            uploadToast.show();
-        }
-    };
-
-    // Load aerial video for preview
-    async function loadAerialVideo(houseId) {
-        if (!houseId) {
-            console.error('No houseId provided to loadAerialVideo');
-            return;
-        }
-
-        try {
-            console.log('Loading aerial video for house:', houseId);
-            const response = await fetch(`/api/assets?type=aerial&houseId=${houseId}`);
-            if (!response.ok) throw new Error('Failed to load aerial video');
-            
-            const data = await response.json();
-            console.log('Aerial video data:', data);
-            
-            if (data && data.assets && data.assets.length > 0) {
-                const aerialAsset = data.assets.find(asset => asset.type === 'aerial');
-                if (aerialAsset) {
-                    const previewVideo = document.getElementById('previewVideo');
-                    if (previewVideo) {
-                        const source = previewVideo.querySelector('source');
-                        if (source) {
-                            source.src = aerialAsset.url;
-                            await previewVideo.load();
-                            try {
-                                await previewVideo.play();
-                                console.log('Aerial video loaded and playing');
-                            } catch (error) {
-                                console.error('Error playing preview video:', error);
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error loading aerial video:', error);
-        }
-    }
-
-    // Initialize hotspot asset upload
-    function initializeHotspotAssets() {
-        const uploadArea = document.getElementById('hotspotUploadArea');
-        const fileInput = document.getElementById('hotspotUpload');
-        const progressBar = document.getElementById('hotspotUploadProgress');
-
-        if (!uploadArea || !fileInput || !progressBar) return;
-
-        // Drag and drop handlers
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleHotspotAssetUpload(files[0]);
-            }
-        });
-
-        // File input change handler
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleHotspotAssetUpload(e.target.files[0]);
-            }
-        });
-    }
-
-    // Handle hotspot asset upload
-    async function handleHotspotAssetUpload(file) {
-        const progressBar = document.getElementById('hotspotUploadProgress');
-        const progressBarInner = progressBar.querySelector('.progress-bar');
-        
-        if (!progressBar || !progressBarInner) return;
-
-        try {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('type', 'hotspot');
-            formData.append('houseId', document.getElementById('houseSelector').value);
-
-            progressBar.classList.remove('d-none');
-            progressBarInner.style.width = '0%';
-
-            const response = await fetch('/api/assets', {
-                method: 'POST',
-                body: formData,
-                onUploadProgress: (progressEvent) => {
-                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                    progressBarInner.style.width = percentCompleted + '%';
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error('Upload failed');
+                const errorText = await response.text();
+                throw new Error(errorText || 'Failed to save hotspot');
             }
 
             const result = await response.json();
-            console.log('Hotspot asset uploaded:', result);
+            console.log('Save result:', JSON.stringify(result, null, 2));
+
+            // Reset form and points
+            hotspotForm.reset();
+            currentPoints = [];
+            if (currentPolygon) {
+                currentPolygon.remove();
+                currentPolygon = null;
+            }
+            if (currentPointsGroup) {
+                currentPointsGroup.remove();
+                currentPointsGroup = null;
+            }
+
+            // Reload hotspots
+            await loadHotspots(currentHouse);
             
-            // Reload assets to show the new upload
-            await loadAssets();
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(hotspotModal);
+            modal.hide();
+
+            alert('Hotspot saved successfully!');
         } catch (error) {
-            console.error('Error uploading hotspot asset:', error);
-            alert('Failed to upload hotspot asset. Please try again.');
-        } finally {
-            progressBar.classList.add('d-none');
-            progressBarInner.style.width = '0%';
+            console.error('Error saving hotspot:', error);
+            alert('Error saving hotspot: ' + error.message);
         }
-    }
+    });
 
-    // Video playback optimization
+    // Optimize video playback
     function optimizeVideoPlayback(video) {
-        // Set video attributes for optimal playback
-        video.preload = 'auto';
-        video.playsInline = true;
-        video.muted = true; // Required for autoplay
-        
-        // Add event listeners for better performance
-        video.addEventListener('loadedmetadata', () => {
-            // Pre-buffer the video
-            video.currentTime = 0;
-        });
+        if (!video) return;
 
-        video.addEventListener('canplay', () => {
-            // Video is ready to play
-            console.log('Video ready to play:', video.src);
+        // Set video attributes for better performance
+        video.setAttribute('preload', 'metadata');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+        
+        // Add event listeners for better playback control
+        video.addEventListener('loadedmetadata', () => {
+            // Set initial volume
+            video.volume = 0.5;
+            
+            // Enable controls
+            video.controls = true;
         });
 
         // Handle errors
@@ -1135,334 +1087,654 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Initialize video optimization for all videos
+    // Load aerial video for the current house
+    async function loadAerialVideo(houseId) {
+        try {
+            const response = await fetch(`/api/assets?houseId=${houseId}&type=aerial`);
+            if (!response.ok) throw new Error('Failed to load aerial video');
+            
+            const data = await response.json();
+            if (!data || !data.assets || data.assets.length === 0) {
+                console.log('No aerial video found for house:', houseId);
+                return;
+            }
+
+            // Get the aerial video asset
+            const aerialVideo = data.assets.find(asset => asset.type === 'aerial');
+            if (!aerialVideo) {
+                console.log('No aerial video found for house:', houseId);
+                return;
+            }
+
+            // Update preview video
+            const previewVideo = document.getElementById('previewVideo');
+            if (previewVideo) {
+                previewVideo.src = aerialVideo.url;
+                previewVideo.load();
+                optimizeVideoPlayback(previewVideo);
+            }
+
+            console.log('Aerial video loaded successfully');
+        } catch (error) {
+            console.error('Error loading aerial video:', error);
+        }
+    }
+
+    // Initialize video optimization
     function initializeVideoOptimization() {
+        // Optimize all videos in the page
         document.querySelectorAll('video').forEach(video => {
             optimizeVideoPlayback(video);
         });
     }
 
-    // Update playlist UI
-    function updatePlaylistUI(playlists) {
-        const primaryHotspotPlaylists = document.getElementById('primaryHotspotPlaylists');
-        const globalVideosContainer = document.getElementById('globalVideosContainer');
-        
-        if (!primaryHotspotPlaylists || !globalVideosContainer) {
-            console.error('Required containers not found');
-            return;
+    // Initialize
+    async function initialize() {
+        try {
+            // Initialize asset types first
+            const assetTypes = initializeAssetTypes();
+            
+            // Load hotspots and assets for the current house
+            await loadHotspots(currentHouse);
+            await loadAssets(currentHouse);
+            await loadAerialVideo(currentHouse);
+            
+            // Initialize video playlists
+            await initializeVideoPlaylists(currentHouse);
+            
+            // Update UI
+            updateHotspotList();
+            updatePreview();
+            
+            // Initialize video optimization
+            initializeVideoOptimization();
+        } catch (error) {
+            console.error('Error during initialization:', error);
         }
+    }
 
-        // Get current hotspots
-        const currentHotspots = hotspots.filter(h => h.houseId === currentHouse && h.type === 'primary');
-        console.log('Updating playlist UI for hotspots:', currentHotspots);
+    // Start initialization
+    initialize();
+
+    // Update hotspot list in UI
+    function updateHotspotList() {
+        const hotspotList = document.querySelector('.hotspot-list');
+        if (!hotspotList) return;
+
+        // Filter hotspots for current house
+        const currentHotspots = hotspots.filter(h => h.houseId === currentHouse);
+        console.log('Current hotspots:', currentHotspots);
         
-        // Update global videos container
-        globalVideosContainer.innerHTML = `
-            <div class="card bg-dark">
-                <div class="card-body">
-                    <h6 class="card-title">Global Videos</h6>
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label">Aerial Map Video</label>
-                                <select class="form-select mb-2" id="aerialVideo">
-                                    <option value="">Select Aerial Map Video</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label">Zoom Out Video</label>
-                                <select class="form-select mb-2" id="zoomOutVideo">
-                                    <option value="">Select Zoom Out Video</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
+        // Sort hotspots by type (primary first) and then by title
+        currentHotspots.sort((a, b) => {
+            if (a.type === 'primary' && b.type !== 'primary') return -1;
+            if (a.type !== 'primary' && b.type === 'primary') return 1;
+            return a.title.localeCompare(b.title);
+        });
+
+        hotspotList.innerHTML = currentHotspots.map(hotspot => `
+            <div class="hotspot-item" data-hotspot-id="${hotspot._id}">
+                <div class="hotspot-info">
+                    <h5>${hotspot.title}</h5>
+                    <p>Type: ${hotspot.type}</p>
+                    ${hotspot.description ? `<p>Description: ${hotspot.description}</p>` : ''}
                 </div>
-            </div>
-        `;
-        
-        // Update primary hotspot playlists
-        primaryHotspotPlaylists.innerHTML = currentHotspots.map(hotspot => `
-            <div class="col-md-6 mb-3">
-                <div class="card bg-dark">
-                    <div class="card-body">
-                        <h6 class="card-title">${hotspot.title}</h6>
-                        <div class="mb-3">
-                            <label class="form-label">Dive In Video</label>
-                            <select class="form-select mb-2" id="diveInVideo_${hotspot._id}">
-                                <option value="">Select Dive In Video</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Floor Level Video</label>
-                            <select class="form-select mb-2" id="floorLevelVideo_${hotspot._id}">
-                                <option value="">Select Floor Level Video</option>
-                            </select>
-                        </div>
-                    </div>
+                <div class="hotspot-actions">
+                    <button class="btn btn-sm btn-outline-primary edit-hotspot" data-id="${hotspot._id}">
+                        Edit
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger delete-hotspot" data-id="${hotspot._id}">
+                        Delete
+                    </button>
                 </div>
             </div>
         `).join('');
 
-        // Populate global video selectors
-        const aerialSelect = document.getElementById('aerialVideo');
-        const zoomOutSelect = document.getElementById('zoomOutVideo');
-        
-        if (aerialSelect && zoomOutSelect) {
-            // Get global playlist
-            const globalPlaylist = playlists.global || {};
-            console.log('Global playlist:', globalPlaylist);
-            
-            // Populate aerial videos
-            const aerialVideos = assets.filter(a => a.type === 'aerial');
-            aerialVideos.forEach(video => {
-                const option = document.createElement('option');
-                option.value = video._id;
-                option.textContent = video.name || 'Unnamed Video';
-                if (globalPlaylist.aerial && globalPlaylist.aerial.videoId === video._id) {
-                    option.selected = true;
-                }
-                aerialSelect.appendChild(option);
-            });
-            
-            // Populate zoom out videos
-            const zoomOutVideos = assets.filter(a => a.type === 'zoomOut');
-            zoomOutVideos.forEach(video => {
-                const option = document.createElement('option');
-                option.value = video._id;
-                option.textContent = video.name || 'Unnamed Video';
-                if (globalPlaylist.zoomOut && globalPlaylist.zoomOut.videoId === video._id) {
-                    option.selected = true;
-                }
-                zoomOutSelect.appendChild(option);
-            });
-            
-            // Add change event listeners for global videos
-            aerialSelect.addEventListener('change', () => updateGlobalPlaylist('aerial', aerialSelect.value));
-            zoomOutSelect.addEventListener('change', () => updateGlobalPlaylist('zoomOut', zoomOutSelect.value));
-        }
+        // Add event listeners for edit and delete buttons
+        hotspotList.querySelectorAll('.edit-hotspot').forEach(button => {
+            button.addEventListener('click', () => editHotspot(button.dataset.id));
+        });
 
-        // Populate hotspot video selectors
-        currentHotspots.forEach(hotspot => {
-            const diveInSelect = document.getElementById(`diveInVideo_${hotspot._id}`);
-            const floorLevelSelect = document.getElementById(`floorLevelVideo_${hotspot._id}`);
-            
-            if (diveInSelect && floorLevelSelect) {
-                // Get current playlist for this hotspot
-                const playlist = playlists[hotspot._id] || {};
-                console.log(`Playlist for hotspot ${hotspot._id}:`, playlist);
+        hotspotList.querySelectorAll('.delete-hotspot').forEach(button => {
+            button.addEventListener('click', () => deleteHotspot(button.dataset.id));
+        });
+
+        // Add click handlers for hotspot items
+        hotspotList.querySelectorAll('.hotspot-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                // Don't trigger if clicking on buttons
+                if (e.target.closest('.hotspot-actions')) return;
+
+                const hotspotId = item.dataset.hotspotId;
+                console.log('Clicked hotspot ID:', hotspotId);
                 
-                // Populate dive-in videos
-                const diveInVideos = assets.filter(a => a.type === 'diveIn');
-                diveInVideos.forEach(video => {
-                    const option = document.createElement('option');
-                    option.value = video._id;
-                    option.textContent = video.name || 'Unnamed Video';
-                    if (playlist.diveIn && playlist.diveIn.videoId === video._id) {
-                        option.selected = true;
-                    }
-                    diveInSelect.appendChild(option);
+                // Reset all hotspot items
+                hotspotList.querySelectorAll('.hotspot-item').forEach(i => {
+                    i.style.backgroundColor = '';
                 });
                 
-                // Populate floor level videos
-                const floorLevelVideos = assets.filter(a => a.type === 'floorLevel');
-                floorLevelVideos.forEach(video => {
-                    const option = document.createElement('option');
-                    option.value = video._id;
-                    option.textContent = video.name || 'Unnamed Video';
-                    if (playlist.floorLevel && playlist.floorLevel.videoId === video._id) {
-                        option.selected = true;
-                    }
-                    floorLevelSelect.appendChild(option);
-                });
+                // Highlight clicked item
+                item.style.backgroundColor = 'rgba(229, 9, 20, 0.1)';
                 
-                // Add change event listeners
-                diveInSelect.addEventListener('change', () => updatePlaylist(hotspot._id, 'diveIn', diveInSelect.value));
-                floorLevelSelect.addEventListener('change', () => updatePlaylist(hotspot._id, 'floorLevel', floorLevelSelect.value));
-            }
+                // Reset all polygons in preview
+                const svg = previewContainer.querySelector('svg');
+                if (svg) {
+                    console.log('Found SVG container');
+                    
+                    // Reset all polygons
+                    svg.querySelectorAll('polygon').forEach(p => {
+                        p.setAttribute('fill', 'rgba(229, 9, 20, 0.2)');
+                        p.setAttribute('stroke-width', '0.5');
+                    });
+                    
+                    // Find the group with matching data-id
+                    const group = svg.querySelector(`g[data-id="${hotspotId}"]`);
+                    console.log('Found group:', group);
+                    
+                    if (group) {
+                        const polygon = group.querySelector('polygon');
+                        console.log('Found polygon:', polygon);
+                        
+                        if (polygon) {
+                            // Ensure the polygon has valid points
+                            const points = polygon.getAttribute('points');
+                            console.log('Polygon points:', points);
+                            
+                            if (points && points.trim()) {
+                                polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.4)');
+                                polygon.setAttribute('stroke-width', '1');
+                                console.log('Updated polygon styles');
+                            } else {
+                                console.error('Polygon has no points');
+                            }
+                        }
+                    } else {
+                        console.log('No group found with ID:', hotspotId);
+                        // Log all available groups for debugging
+                        svg.querySelectorAll('g').forEach(g => {
+                            console.log('Available group:', g.getAttribute('data-id'));
+                        });
+                    }
+                } else {
+                    console.log('No SVG container found');
+                }
+            });
         });
     }
 
-    // Update global playlist
-    async function updateGlobalPlaylist(type, videoId) {
+    // Edit hotspot
+    async function editHotspot(hotspotId) {
+        const hotspot = hotspots.find(h => h._id === hotspotId);
+        if (!hotspot) return;
+
+        // Set form values
+        document.getElementById('hotspotTitle').value = hotspot.title;
+        document.getElementById('hotspotType').value = hotspot.type;
+        document.getElementById('hotspotDescription').value = hotspot.description || '';
+
+        // Store current points
+        currentPoints = hotspot.points.map(p => ({
+            x: p.x,
+            y: p.y
+        }));
+
+        // Show drawing
+        if (currentPolygon) {
+            currentPolygon.remove();
+        }
+        if (currentPointsGroup) {
+            currentPointsGroup.remove();
+        }
+
+        // Create SVG container if it doesn't exist
+        let svg = previewContainer.querySelector('svg');
+        if (!svg) {
+            svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', '100%');
+            svg.setAttribute('height', '100%');
+            svg.style.position = 'absolute';
+            svg.style.top = '0';
+            svg.style.left = '0';
+            svg.style.pointerEvents = 'none';
+            previewContainer.appendChild(svg);
+        }
+
+        // Create points group
+        currentPointsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        svg.appendChild(currentPointsGroup);
+
+        // Draw points
+        currentPoints.forEach(point => {
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', point.x);
+            circle.setAttribute('cy', point.y);
+            circle.setAttribute('r', '4');
+            circle.style.fill = '#e50914';
+            currentPointsGroup.appendChild(circle);
+        });
+
+        // Create polygon
+        currentPolygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        currentPolygon.style.fill = 'rgba(229, 9, 20, 0.2)';
+        currentPolygon.style.stroke = '#e50914';
+        currentPolygon.style.strokeWidth = '0.5';
+        currentPolygon.style.strokeDasharray = '2,2';
+        currentPolygon.style.strokeLinecap = 'round';
+        currentPolygon.style.strokeLinejoin = 'round';
+        const points = currentPoints.map(p => `${p.x},${p.y}`).join(' ');
+        currentPolygon.setAttribute('points', points);
+        svg.appendChild(currentPolygon);
+
+        // Show modal
+        const modal = new bootstrap.Modal(hotspotModal);
+        modal.show();
+    }
+
+    // Delete hotspot
+    async function deleteHotspot(hotspotId) {
+        if (!confirm('Are you sure you want to delete this hotspot?')) return;
+
         try {
-            const playlists = await loadPlaylists(currentHouse);
-            if (!playlists.global) {
-                playlists.global = {
-                    aerial: { videoId: null },
-                    zoomOut: { videoId: null }
-                };
-            }
-            
-            playlists.global[type] = { videoId };
-            
-            await savePlaylists(currentHouse, {
-                houseId: currentHouse,
-                playlists: playlists
+            const response = await fetch(`/api/hotspots/${hotspotId}`, {
+                method: 'DELETE'
             });
+
+            if (!response.ok) {
+                throw new Error('Failed to delete hotspot');
+            }
+
+            // Remove from local array
+            hotspots = hotspots.filter(h => h._id !== hotspotId);
             
-            console.log(`Updated ${type} video in global playlist`);
+            // Update UI
+            updateHotspotList();
+            updatePreview();
+
+            alert('Hotspot deleted successfully!');
         } catch (error) {
-            console.error('Error updating global playlist:', error);
+            console.error('Error deleting hotspot:', error);
+            alert('Error deleting hotspot: ' + error.message);
         }
     }
 
-    // Update playlist for a hotspot
+    // Update preview
+    function updatePreview() {
+        // Clear existing hotspots and SVG elements
+        const existingHotspots = previewContainer.querySelectorAll('.hotspot');
+        const existingSvg = previewContainer.querySelector('svg');
+        if (existingSvg) existingSvg.remove();
+        existingHotspots.forEach(hotspot => hotspot.remove());
+        
+        // Get the aerial video element
+        const aerialVideo = document.getElementById('previewVideo');
+        let videoWidth = 1920;
+        let videoHeight = 1080;
+        
+        if (aerialVideo) {
+            // If video is loaded, use its dimensions
+            if (aerialVideo.videoWidth && aerialVideo.videoHeight) {
+                videoWidth = aerialVideo.videoWidth;
+                videoHeight = aerialVideo.videoHeight;
+            } else {
+                // If video dimensions aren't available yet, wait for metadata
+                aerialVideo.addEventListener('loadedmetadata', () => {
+                    videoWidth = aerialVideo.videoWidth;
+                    videoHeight = aerialVideo.videoHeight;
+                    updatePreview(); // Re-render with correct dimensions
+                });
+            }
+        } else {
+            console.warn('Aerial video element not found, using default dimensions');
+        }
+        
+        // Calculate the aspect ratio
+        const aspectRatio = videoWidth / videoHeight;
+        
+        // Get the container width
+        const containerWidth = previewContainer.clientWidth;
+        
+        // Calculate the container height based on the aspect ratio
+        const containerHeight = containerWidth / aspectRatio;
+        
+        // Update the preview container dimensions
+        previewContainer.style.height = `${containerHeight}px`;
+        
+        // Create SVG container
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', '100%');
+        svg.setAttribute('viewBox', '0 0 100 100');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.style.position = 'absolute';
+        svg.style.top = '0';
+        svg.style.left = '0';
+        svg.style.pointerEvents = 'all';
+        svg.style.zIndex = '1000';
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        
+        // Filter hotspots for current house
+        const houseHotspots = hotspots.filter(h => h.houseId === currentHouse);
+        console.log('Rendering hotspots:', JSON.stringify(houseHotspots, null, 2));
+        
+        // Add polygons for each hotspot
+        houseHotspots.forEach(hotspot => {
+            console.log('Creating polygon for hotspot:', JSON.stringify(hotspot, null, 2));
+            
+            if (!hotspot.points || !Array.isArray(hotspot.points) || hotspot.points.length < 3) {
+                console.error('Invalid points data for hotspot:', JSON.stringify(hotspot, null, 2));
+                return;
+            }
+            
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            group.setAttribute('class', 'hotspot');
+            group.setAttribute('data-id', hotspot._id);
+            group.style.pointerEvents = 'all';
+            group.style.cursor = 'pointer';
+            
+            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            
+            // Use the points directly as they are already in percentages
+            const pointsString = hotspot.points.map(p => `${p.x},${p.y}`).join(' ');
+            
+            console.log('Setting polygon points:', pointsString);
+            
+            // Set points attribute
+            polygon.setAttribute('points', pointsString);
+            
+            // Verify points were set
+            const points = polygon.getAttribute('points');
+            console.log('Verified polygon points:', points);
+            
+            if (!points || !points.trim()) {
+                console.error('Failed to set points on polygon');
+                return;
+            }
+            
+            // Set default styles using SVG attributes
+            polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.2)');
+            polygon.setAttribute('stroke', hotspot.type === 'primary' ? '#e50914' : '#ff4d4d');
+            polygon.setAttribute('stroke-width', '0.5');
+            polygon.setAttribute('stroke-dasharray', '2,2');
+            polygon.setAttribute('stroke-linecap', 'round');
+            polygon.setAttribute('stroke-linejoin', 'round');
+            
+            // Add hover effect
+            group.addEventListener('mouseover', function() {
+                polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.4)');
+                polygon.setAttribute('stroke-width', '1');
+            });
+            
+            group.addEventListener('mouseout', function() {
+                polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.2)');
+                polygon.setAttribute('stroke-width', '0.5');
+            });
+            
+            // Add click handler
+            group.addEventListener('click', () => {
+                // Reset all polygons
+                svg.querySelectorAll('polygon').forEach(p => {
+                    p.setAttribute('fill', 'rgba(229, 9, 20, 0.2)');
+                    p.setAttribute('stroke-width', '0.5');
+                });
+                
+                // Highlight clicked polygon
+                polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.4)');
+                polygon.setAttribute('stroke-width', '1');
+                
+                // Find and scroll to corresponding hotspot in the list
+                const hotspotItem = document.querySelector(`[data-hotspot-id="${hotspot._id}"]`);
+                if (hotspotItem) {
+                    hotspotItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            });
+            
+            group.appendChild(polygon);
+            svg.appendChild(group);
+        });
+        
+        previewContainer.appendChild(svg);
+        
+        // Log the final SVG structure
+        console.log('Final SVG structure:', svg.innerHTML);
+    }
+
+    // Update playlist UI
+    function updatePlaylistUI(playlists) {
+        console.log('Updating playlist UI with playlists:', playlists);
+        
+        // Update global aerial video only
+        const globalAerialSelect = document.getElementById('globalAerialSelect');
+        
+        if (globalAerialSelect) {
+            // Clear existing options
+            globalAerialSelect.innerHTML = '<option value="">Select Video</option>';
+            
+            // Add aerial video options
+            const aerialAssets = assets.filter(asset => asset.type === 'aerial');
+            console.log('Aerial assets:', aerialAssets);
+            
+            aerialAssets.forEach(asset => {
+                const option = document.createElement('option');
+                option.value = asset._id;
+                option.textContent = asset.name || 'Unnamed Asset';
+                if (playlists.global?.aerial?.videoId === asset._id) {
+                    option.selected = true;
+                }
+                globalAerialSelect.appendChild(option);
+            });
+        }
+
+        // Update hotspot playlists
+        const hotspotPlaylistsContainer = document.getElementById('hotspotPlaylistsContainer');
+        if (!hotspotPlaylistsContainer) {
+            console.error('Hotspot playlists container not found');
+            return;
+        }
+
+        // Get primary hotspots
+        const primaryHotspots = hotspots.filter(h => h.type === 'primary' && h.houseId === currentHouse);
+        console.log('Primary hotspots for playlists:', primaryHotspots);
+        
+        // Create playlist UI for each primary hotspot
+        hotspotPlaylistsContainer.innerHTML = primaryHotspots.map(hotspot => {
+            const hotspotPlaylists = playlists[hotspot._id] || {};
+            console.log(`Creating playlist UI for hotspot ${hotspot._id}:`, hotspotPlaylists);
+            
+            // Get available videos for each type
+            const diveInVideos = assets.filter(asset => asset.type === 'diveIn');
+            const floorLevelVideos = assets.filter(asset => asset.type === 'floorLevel');
+            const zoomOutVideos = assets.filter(asset => asset.type === 'zoomOut');
+            
+            console.log('Available videos:', {
+                diveIn: diveInVideos,
+                floorLevel: floorLevelVideos,
+                zoomOut: zoomOutVideos
+            });
+            
+            return `
+                <div class="card bg-dark mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">${hotspot.title}</h5>
+                        <div class="mb-3">
+                            <label class="form-label">Dive In Video</label>
+                            <select class="form-select" id="diveInSelect_${hotspot._id}">
+                                <option value="">Select Video</option>
+                                ${diveInVideos.map(asset => `
+                                    <option value="${asset._id}" 
+                                        ${hotspotPlaylists.diveIn?.videoId === asset._id ? 'selected' : ''}>
+                                        ${asset.name || 'Unnamed Asset'}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Floor Level Video</label>
+                            <select class="form-select" id="floorLevelSelect_${hotspot._id}">
+                                <option value="">Select Video</option>
+                                ${floorLevelVideos.map(asset => `
+                                    <option value="${asset._id}"
+                                    ${hotspotPlaylists.floorLevel?.videoId === asset._id ? 'selected' : ''}>
+                                    ${asset.name || 'Unnamed Asset'}
+                                </option>
+                            `).join('')}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Zoom Out Video</label>
+                        <select class="form-select" id="zoomOutSelect_${hotspot._id}">
+                            <option value="">Select Video</option>
+                            ${zoomOutVideos.map(asset => `
+                                <option value="${asset._id}"
+                                    ${hotspotPlaylists.zoomOut?.videoId === asset._id ? 'selected' : ''}>
+                                    ${asset.name || 'Unnamed Asset'}
+                                </option>
+                            `).join('')}
+                        </select>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Add event listeners for playlist changes
+        primaryHotspots.forEach(hotspot => {
+            const diveInSelect = document.getElementById(`diveInSelect_${hotspot._id}`);
+            const floorLevelSelect = document.getElementById(`floorLevelSelect_${hotspot._id}`);
+            const zoomOutSelect = document.getElementById(`zoomOutSelect_${hotspot._id}`);
+
+            if (diveInSelect) {
+                diveInSelect.addEventListener('change', () => {
+                    updatePlaylist(hotspot._id, 'diveIn', diveInSelect.value);
+                });
+            }
+
+            if (floorLevelSelect) {
+                floorLevelSelect.addEventListener('change', () => {
+                    updatePlaylist(hotspot._id, 'floorLevel', floorLevelSelect.value);
+                });
+            }
+
+            if (zoomOutSelect) {
+                zoomOutSelect.addEventListener('change', () => {
+                    updatePlaylist(hotspot._id, 'zoomOut', zoomOutSelect.value);
+                });
+            }
+        });
+
+        // Add event listener for global aerial video change
+        if (globalAerialSelect) {
+            globalAerialSelect.addEventListener('change', () => {
+                updateGlobalPlaylist('aerial', globalAerialSelect.value);
+            });
+        }
+    }
+
+    // Update playlist
     async function updatePlaylist(hotspotId, type, videoId) {
         try {
             const playlists = await loadPlaylists(currentHouse);
+            console.log('Current playlists:', playlists);
+            
+            // Initialize playlist structure if it doesn't exist
             if (!playlists[hotspotId]) {
                 playlists[hotspotId] = {
                     diveIn: { videoId: null },
                     floorLevel: { videoId: null }
                 };
             }
-            
+
+            // Update the specific playlist
             playlists[hotspotId][type] = { videoId };
+
+            // Save updated playlists
+            await savePlaylists(currentHouse, playlists);
             
-            await savePlaylists(currentHouse, {
-                houseId: currentHouse,
-                playlists: playlists
-            });
-            
-            console.log(`Updated ${type} video for hotspot ${hotspotId}`);
+            // Update UI
+            updatePlaylistUI(playlists);
+
+            console.log(`Updated ${type} playlist for hotspot ${hotspotId}`);
         } catch (error) {
             console.error('Error updating playlist:', error);
+            alert('Failed to update playlist. Please try again.');
         }
     }
 
-    // Add event listener for playlist house selector
-    const playlistHouseSelector = document.getElementById('playlistHouseSelector');
-    if (playlistHouseSelector) {
-        playlistHouseSelector.addEventListener('change', async (e) => {
-            const houseId = parseInt(e.target.value);
-            currentHouse = houseId;
-            try {
-                const playlists = await loadPlaylists(houseId);
-                updatePlaylistUI(playlists);
-            } catch (error) {
-                console.error('Error loading playlists:', error);
-            }
-        });
-    }
-
-    // Drawing Functions
-    startDrawingBtn.addEventListener('click', startDrawing);
-    finishDrawingBtn.addEventListener('click', finishDrawing);
-    cancelDrawingBtn.addEventListener('click', cancelDrawing);
-    previewContainer.addEventListener('click', handlePreviewClick);
-    assetTypeSelect.addEventListener('change', handleAssetTypeChange);
-
-    // Initialize
-    loadHotspots();
-
-    function startDrawing() {
-        isDrawing = true;
-        currentPoints = [];
-        startDrawingBtn.disabled = true;
-        finishDrawingBtn.disabled = false;
-        cancelDrawingBtn.disabled = false;
-        previewContainer.style.cursor = 'crosshair';
-    }
-
-    function finishDrawing() {
-        if (currentPoints.length < 3) {
-            alert('Please draw at least 3 points to create a polygon');
-            return;
-        }
-        
-        isDrawing = false;
-        startDrawingBtn.disabled = false;
-        finishDrawingBtn.disabled = true;
-        cancelDrawingBtn.disabled = true;
-        previewContainer.style.cursor = 'default';
-        
-        // Create hotspot data
-        const hotspotData = {
-            title: document.getElementById('hotspotTitle').value,
-            type: document.getElementById('hotspotType').value,
-            points: currentPoints,
-            description: document.getElementById('hotspotDescription').value,
-            houseId: parseInt(document.getElementById('houseId').value)
-        };
-        
-        // Save hotspot
-        saveHotspot(hotspotData);
-    }
-
-    function cancelDrawing() {
-        isDrawing = false;
-        currentPoints = [];
-        startDrawingBtn.disabled = false;
-        finishDrawingBtn.disabled = true;
-        cancelDrawingBtn.disabled = true;
-        previewContainer.style.cursor = 'default';
-        updatePreview();
-    }
-
-    function handlePreviewClick(e) {
-        if (!isDrawing) return;
-        
-        const rect = previewContainer.getBoundingClientRect();
-        const x = ((e.clientX - rect.left) / rect.width) * 100;
-        const y = ((e.clientY - rect.top) / rect.height) * 100;
-        
-        currentPoints.push({ x, y });
-        updatePreview();
-    }
-
-    function handleAssetTypeChange() {
-        const isHotspot = assetTypeSelect.value === 'hotspot';
-        hotspotIdContainer.style.display = isHotspot ? 'block' : 'none';
-    }
-
-    // Hotspot Management
-    async function saveHotspot(hotspotData) {
+    // Update global playlist
+    async function updateGlobalPlaylist(type, videoId) {
         try {
+            const playlists = await loadPlaylists(currentHouse);
+            
+            // Initialize global playlist if it doesn't exist
+            if (!playlists.global) {
+                playlists.global = {
+                    aerial: { videoId: null },
+                    zoomOut: { videoId: null }
+                };
+            }
+
+            // Update the specific global playlist
+            playlists.global[type] = { videoId };
+
+            // Save updated playlists
+            await savePlaylists(currentHouse, playlists);
+            
+            // Update UI
+            updatePlaylistUI(playlists);
+
+            console.log(`Updated global ${type} playlist`);
+        } catch (error) {
+            console.error('Error updating global playlist:', error);
+            alert('Failed to update global playlist. Please try again.');
+        }
+    }
+
+    // Save hotspots
+    async function saveHotspots() {
+        try {
+            // Filter hotspots for current house
+            const currentHotspots = hotspots.filter(h => h.houseId === currentHouse);
+            
+            console.log('Saving hotspots:', currentHotspots);
+            
             const response = await fetch('/api/hotspots', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(hotspotData)
+                body: JSON.stringify({
+                    houseId: currentHouse,
+                    hotspots: currentHotspots
+                })
             });
-            
+
             if (!response.ok) {
-                throw new Error('Failed to save hotspot');
+                const errorText = await response.text();
+                throw new Error(errorText || 'Failed to save hotspots');
             }
+
+            const result = await response.json();
+            console.log('Save hotspots result:', result);
             
-            await loadHotspots();
-            hotspotForm.reset();
-            currentPoints = [];
-            updatePreview();
+            // Update local hotspots array with server response
+            if (result.hotspots) {
+                hotspots = result.hotspots;
+                updateHotspotList();
+                updatePreview();
+            }
+
+            return result;
         } catch (error) {
-            console.error('Error saving hotspot:', error);
-            alert('Failed to save hotspot. Please try again.');
+            console.error('Error saving hotspots:', error);
+            throw error;
         }
     }
 
-    // Initial load
-    try {
-        // Initialize asset types first
-        const assetTypes = initializeAssetTypes();
-        
-        // Load hotspots and assets for the current house
-        await loadHotspots(currentHouse);
-        await loadAssets(currentHouse);
-        await loadAerialVideo(currentHouse);
-        
-        // Initialize video playlists
-        await initializeVideoPlaylists(currentHouse);
-        
-        // Update UI
-        updateHotspotList();
-        updatePreview();
-        
-        // Initialize video optimization
-        initializeVideoOptimization();
-    } catch (error) {
-        console.error('Error during initialization:', error);
-    }
+    // Add window resize handler
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            updatePreview();
+        }, 250); // Debounce resize events
+    });
 }); 
