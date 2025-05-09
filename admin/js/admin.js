@@ -183,7 +183,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error('Invalid response format from server');
             }
             
-            window.hotspots = data.hotspots;
+            // Add points to Theater hotspot if it has none
+            const updatedHotspots = data.hotspots.map(hotspot => {
+                if (hotspot.title === 'Theater' && (!hotspot.points || hotspot.points.length === 0)) {
+                    return {
+                        ...hotspot,
+                        points: [
+                            { x: 40, y: 40 },
+                            { x: 60, y: 40 },
+                            { x: 60, y: 60 },
+                            { x: 40, y: 60 }
+                        ]
+                    };
+                }
+                return hotspot;
+            });
+            
+            window.hotspots = updatedHotspots;
             console.log('Updated hotspots array:', window.hotspots);
             updateHotspotList();
             updatePreview();
