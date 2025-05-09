@@ -1245,7 +1245,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     // Reset all polygons
                     svg.querySelectorAll('polygon').forEach(p => {
-                        p.setAttribute('fill', 'rgba(229, 9, 20, 0.2)');
+                        p.setAttribute('fill', 'rgba(229, 9, 20, 0)');
                         p.setAttribute('stroke-width', '0.5');
                     });
                     
@@ -1337,7 +1337,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Create polygon
         currentPolygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        currentPolygon.style.fill = 'rgba(229, 9, 20, 0.2)';
+        currentPolygon.style.fill = 'rgba(229, 9, 20, 0)';
         currentPolygon.style.stroke = '#e50914';
         currentPolygon.style.strokeWidth = '0.5';
         currentPolygon.style.strokeDasharray = '2,2';
@@ -1483,29 +1483,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             
             // Set default styles using SVG attributes
-            polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.2)');
-            polygon.setAttribute('stroke', hotspot.type === 'primary' ? '#e50914' : '#ff4d4d');
-            polygon.setAttribute('stroke-width', '0.5');
-            polygon.setAttribute('stroke-dasharray', '2,2');
-            polygon.setAttribute('stroke-linecap', 'round');
-            polygon.setAttribute('stroke-linejoin', 'round');
+            polygon.setAttribute('fill', 'rgba(229, 9, 20, 0)'); // Fully transparent
+            polygon.setAttribute('stroke', 'none'); // Remove stroke
+            polygon.setAttribute('stroke-width', '0');
+            polygon.setAttribute('stroke-dasharray', 'none');
+            polygon.setAttribute('stroke-linecap', 'none');
+            polygon.setAttribute('stroke-linejoin', 'none');
             
             // Add hover effect
             group.addEventListener('mouseover', function() {
                 polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.4)');
-                polygon.setAttribute('stroke-width', '1');
             });
             
             group.addEventListener('mouseout', function() {
-                polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.2)');
-                polygon.setAttribute('stroke-width', '0.5');
+                polygon.setAttribute('fill', 'rgba(229, 9, 20, 0)');
             });
             
             // Add click handler
             group.addEventListener('click', () => {
                 // Reset all polygons
                 svg.querySelectorAll('polygon').forEach(p => {
-                    p.setAttribute('fill', 'rgba(229, 9, 20, 0.2)');
+                    p.setAttribute('fill', 'rgba(229, 9, 20, 0)');
                     p.setAttribute('stroke-width', '0.5');
                 });
                 
