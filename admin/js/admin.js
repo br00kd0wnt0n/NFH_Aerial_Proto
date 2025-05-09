@@ -11,7 +11,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const notificationToast = new bootstrap.Toast(document.getElementById('notificationToast'));
     
     // Global variables
-    let hotspots = [];
     let currentHouse = 1; // Set default house ID
     let editingHotspotId = null;
     let assetTypes = null;
@@ -184,11 +183,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error('Invalid response format from server');
             }
             
-            hotspots = data.hotspots;
-            console.log('Updated hotspots array:', hotspots);
+            window.hotspots = data.hotspots;
+            console.log('Updated hotspots array:', window.hotspots);
             updateHotspotList();
             updatePreview();
-            return hotspots;
+            return window.hotspots;
         } catch (error) {
             console.error('Error loading hotspots:', error);
             throw error;
@@ -437,7 +436,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const floorLevelAssetsContainer = document.getElementById('floorLevelAssetsContainer');
         if (!zoneTransitionsContainer || !floorLevelAssetsContainer) return;
 
-        const currentHotspots = hotspots.filter(h => h.houseId === parseInt(assetHouseSelector.value) && h.type === 'primary');
+        const currentHotspots = window.hotspots.filter(h => h.houseId === parseInt(assetHouseSelector.value) && h.type === 'primary');
         
         // Initialize zone transitions
         zoneTransitionsContainer.innerHTML = currentHotspots.map(hotspot => `
@@ -682,10 +681,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     // Update hotspot data
                     const hotspotId = hotspot.getAttribute('data-id');
-                    const hotspotIndex = hotspots.findIndex(h => h._id === hotspotId);
+                    const hotspotIndex = window.hotspots.findIndex(h => h._id === hotspotId);
                     if (hotspotIndex !== -1) {
-                        hotspots[hotspotIndex].posX = posX;
-                        hotspots[hotspotIndex].posY = posY;
+                        window.hotspots[hotspotIndex].posX = posX;
+                        window.hotspots[hotspotIndex].posY = posY;
                         updateHotspotList();
                         saveHotspots();
                     }
@@ -1166,12 +1165,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     initialize();
 
     // Update hotspot list in UI
-    function updateHotspotList() {
+    window.updateHotspotList = function() {
         const hotspotList = document.querySelector('.hotspot-list');
         if (!hotspotList) return;
 
         // Filter hotspots for current house
-        const currentHotspots = hotspots.filter(h => h.houseId === currentHouse);
+        const currentHotspots = window.hotspots.filter(h => h.houseId === currentHouse);
         console.log('Current hotspots:', currentHotspots);
         
         // Sort hotspots by type (primary first) and then by title
@@ -1271,7 +1270,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Edit hotspot
     async function editHotspot(hotspotId) {
-        const hotspot = hotspots.find(h => h._id === hotspotId);
+        const hotspot = window.hotspots.find(h => h._id === hotspotId);
         if (!hotspot) return;
 
         // Set form values
@@ -1343,7 +1342,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             // First, get the hotspot from the local array
-            const hotspot = hotspots.find(h => h._id === hotspotId);
+            const hotspot = window.hotspots.find(h => h._id === hotspotId);
             if (!hotspot) {
                 throw new Error('Hotspot not found');
             }
@@ -1357,7 +1356,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             // Remove from local array
-            hotspots = hotspots.filter(h => h._id !== hotspotId);
+            window.hotspots = window.hotspots.filter(h => h._id !== hotspotId);
             
             // Update UI
             updateHotspotList();
@@ -1374,7 +1373,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Update preview
-    function updatePreview() {
+    window.updatePreview = function() {
         // Clear existing hotspots and SVG elements
         const existingHotspots = previewContainer.querySelectorAll('.hotspot');
         const existingSvg = previewContainer.querySelector('svg');
@@ -1430,7 +1429,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         svg.style.height = '100%';
         
         // Filter hotspots for current house
-        const houseHotspots = hotspots.filter(h => h.houseId === currentHouse);
+        const houseHotspots = window.hotspots.filter(h => h.houseId === currentHouse);
         console.log('Rendering hotspots:', JSON.stringify(houseHotspots, null, 2));
         
         // Add polygons for each hotspot
@@ -1549,7 +1548,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // Get primary hotspots
-        const primaryHotspots = hotspots.filter(h => h.type === 'primary' && h.houseId === currentHouse);
+        const primaryHotspots = window.hotspots.filter(h => h.type === 'primary' && h.houseId === currentHouse);
         console.log('Primary hotspots for playlists:', primaryHotspots);
         
         // Create playlist UI for each primary hotspot
@@ -1708,7 +1707,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function saveHotspots() {
         try {
             // Filter hotspots for current house
-            const currentHotspots = hotspots.filter(h => h.houseId === currentHouse);
+            const currentHotspots = window.hotspots.filter(h => h.houseId === currentHouse);
             
             console.log('Saving hotspots:', currentHotspots);
             
@@ -1733,7 +1732,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // Update local hotspots array with server response
             if (result.hotspots) {
-                hotspots = result.hotspots;
+                window.hotspots = result.hotspots;
                 updateHotspotList();
                 updatePreview();
             }
