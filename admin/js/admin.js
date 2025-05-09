@@ -1192,20 +1192,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <button class="btn btn-sm btn-outline-primary edit-hotspot" data-id="${hotspot._id}">
                         Edit
                     </button>
-                    <button class="btn btn-sm btn-outline-danger delete-hotspot" data-id="${hotspot._id}">
+                    <button class="btn btn-sm btn-outline-danger delete-hotspot" data-id="${hotspot._id}" onclick="deleteHotspot('${hotspot._id}')">
                         Delete
                     </button>
                 </div>
             </div>
         `).join('');
 
-        // Add event listeners for edit and delete buttons
+        // Add event listeners for edit buttons
         hotspotList.querySelectorAll('.edit-hotspot').forEach(button => {
             button.addEventListener('click', () => editHotspot(button.dataset.id));
-        });
-
-        hotspotList.querySelectorAll('.delete-hotspot').forEach(button => {
-            button.addEventListener('click', () => deleteHotspot(button.dataset.id));
         });
 
         // Add click handlers for hotspot items
@@ -1344,6 +1340,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!confirm('Are you sure you want to delete this hotspot?')) return;
 
         try {
+            // First, get the hotspot from the local array
+            const hotspot = hotspots.find(h => h._id === hotspotId);
+            if (!hotspot) {
+                throw new Error('Hotspot not found');
+            }
+
             const response = await fetch(`/api/hotspots/${hotspotId}`, {
                 method: 'DELETE'
             });
@@ -1359,7 +1361,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateHotspotList();
             updatePreview();
 
-            alert('Hotspot deleted successfully!');
+            // Show success message
+            const toast = new bootstrap.Toast(document.getElementById('notificationToast'));
+            document.getElementById('notificationToast').querySelector('.toast-body').textContent = 'Hotspot deleted successfully';
+            toast.show();
         } catch (error) {
             console.error('Error deleting hotspot:', error);
             alert('Error deleting hotspot: ' + error.message);

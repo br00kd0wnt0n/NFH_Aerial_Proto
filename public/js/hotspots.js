@@ -416,8 +416,8 @@ class HotspotManager {
             }
             
             // Set default styles using SVG attributes
-            polygon.setAttribute('fill', 'rgba(229, 9, 20, 0)'); // Completely transparent
-            polygon.setAttribute('stroke', 'rgba(229, 9, 20, 0)'); // Transparent stroke
+            polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.2)'); // Semi-transparent fill
+            polygon.setAttribute('stroke', hotspot.type === 'primary' ? '#e50914' : '#ff4d4d'); // Visible stroke
             polygon.setAttribute('stroke-width', '0.5');
             polygon.setAttribute('stroke-dasharray', '2,2');
             polygon.setAttribute('stroke-linecap', 'round');
@@ -427,12 +427,12 @@ class HotspotManager {
             // Add hover effect - show fill and stroke on hover
             group.addEventListener('mouseover', function() {
                 polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.4)');
-                polygon.setAttribute('stroke', hotspot.type === 'primary' ? '#e50914' : '#ff4d4d');
+                polygon.setAttribute('stroke-width', '1');
             });
             
             group.addEventListener('mouseout', function() {
-                polygon.setAttribute('fill', 'rgba(229, 9, 20, 0)');
-                polygon.setAttribute('stroke', 'rgba(229, 9, 20, 0)');
+                polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.2)');
+                polygon.setAttribute('stroke-width', '0.5');
             });
             
             // Add click handler
