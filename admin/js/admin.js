@@ -220,12 +220,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </video>
                     </td>
                     <td>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteAsset('${asset._id}')">
+                        <button class="btn btn-sm btn-outline-danger" data-asset-id="${asset._id}">
                             Delete
                         </button>
                     </td>
                 </tr>
             `).join('');
+
+            // Add event listeners to delete buttons
+            tableBody.querySelectorAll('button[data-asset-id]').forEach(button => {
+                button.addEventListener('click', () => deleteAsset(button.dataset.assetId));
+            });
 
             // Initialize video optimization for all videos in the table
             tableBody.querySelectorAll('video').forEach(video => {
@@ -1742,13 +1747,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 250); // Debounce resize events
     });
 
-    // Delete asset function
+    // Global functions
     async function deleteAsset(assetId) {
-        try {
-            if (!confirm('Are you sure you want to delete this asset?')) {
-                return;
-            }
+        if (!confirm('Are you sure you want to delete this asset?')) {
+            return;
+        }
 
+        try {
             const response = await fetch(`/api/assets/${assetId}`, {
                 method: 'DELETE'
             });
@@ -1757,21 +1762,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error('Failed to delete asset');
             }
 
-            // Reload assets after successful deletion
-            await loadAssets(assetHouseSelector.value);
-            
+            // Remove the asset from the table
+            const row = document.querySelector(`button[data-asset-id="${assetId}"]`).closest('tr');
+            row.remove();
+
             // Show success message
-            const toast = new bootstrap.Toast(document.getElementById('uploadToast'));
-            document.querySelector('#uploadToast .toast-body').textContent = 'Asset deleted successfully';
+            const toast = new bootstrap.Toast(document.getElementById('notificationToast'));
+            document.getElementById('notificationToast').querySelector('.toast-body').textContent = 'Asset deleted successfully';
             toast.show();
+
+            // Reload assets to update the list
+            await loadAssets(currentHouse);
         } catch (error) {
             console.error('Error deleting asset:', error);
             alert('Failed to delete asset. Please try again.');
         }
     }
-
-    // Make deleteAsset available globally
-    window.deleteAsset = deleteAsset;
 
     // Add event listener for upload asset button
     if (uploadAssetBtn) {
