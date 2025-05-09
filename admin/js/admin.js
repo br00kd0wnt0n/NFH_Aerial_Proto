@@ -1187,6 +1187,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <h5>${hotspot.title}</h5>
                     <p>Type: ${hotspot.type}</p>
                     ${hotspot.description ? `<p>Description: ${hotspot.description}</p>` : ''}
+                    ${(!hotspot.points || hotspot.points.length === 0) ? 
+                        '<p class="text-warning">Warning: No points defined for this hotspot</p>' : ''}
                 </div>
                 <div class="hotspot-actions">
                     <button class="btn btn-sm btn-outline-primary edit-hotspot" data-id="${hotspot._id}">
@@ -1335,8 +1337,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         modal.show();
     }
 
-    // Delete hotspot
-    async function deleteHotspot(hotspotId) {
+    // Global functions
+    window.deleteHotspot = async function(hotspotId) {
         if (!confirm('Are you sure you want to delete this hotspot?')) return;
 
         try {
