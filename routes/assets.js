@@ -28,33 +28,39 @@ router.get('/video/:id', async (req, res) => {
     req.setTimeout(30000); // 30 seconds timeout
 
     try {
-        console.log('Processing video request for asset ID:', req.params.id);
+        const assetId = req.params.id;
+        console.log('Processing video request for asset ID:', assetId);
         
         // Validate asset ID format
-        if (!req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
-            console.error('Invalid asset ID format:', req.params.id);
+        if (!assetId.match(/^[0-9a-fA-F]{24}$/)) {
+            console.error('Invalid asset ID format:', assetId);
             return res.status(400).json({ 
                 error: 'Invalid asset ID format',
                 details: 'Asset ID must be a valid MongoDB ObjectId'
             });
         }
 
-        const asset = await Asset.findById(req.params.id);
+        const asset = await Asset.findById(assetId);
         if (!asset) {
-            console.error('Asset not found in database:', req.params.id);
+            console.error('Asset not found in database:', assetId);
             return res.status(404).json({ 
                 error: 'Asset not found',
                 details: 'No asset found with the provided ID'
             });
         }
 
+        // Log detailed asset information
         console.log('Found asset in database:', {
             id: asset._id,
             name: asset.name,
             url: asset.url,
             type: asset.type,
             createdAt: asset.createdAt,
-            originalName: asset.originalName // Log the original filename
+            originalName: asset.originalName,
+            mimeType: asset.mimeType,
+            size: asset.size,
+            houseId: asset.houseId,
+            playbackRules: asset.playbackRules
         });
 
         // Validate asset URL
@@ -71,7 +77,12 @@ router.get('/video/:id', async (req, res) => {
         try {
             const s3Url = new URL(asset.url);
             key = s3Url.pathname.slice(1); // Remove leading slash
-            console.log('Extracted S3 key:', key);
+            console.log('Extracted S3 key:', {
+                key,
+                bucket: s3Url.hostname.split('.')[0],
+                region: s3Url.hostname.split('.')[1],
+                fullUrl: asset.url
+            });
             
             // Log file extension from key
             const extension = path.extname(key).toLowerCase();
@@ -79,7 +90,8 @@ router.get('/video/:id', async (req, res) => {
         } catch (urlError) {
             console.error('Failed to parse asset URL:', {
                 url: asset.url,
-                error: urlError.message
+                error: urlError.message,
+                stack: urlError.stack
             });
             return res.status(500).json({ 
                 error: 'Invalid asset URL format',
@@ -105,7 +117,8 @@ router.get('/video/:id', async (req, res) => {
         console.log('Sending GetObjectCommand to S3:', {
             bucket: process.env.AWS_BUCKET_NAME,
             key: key,
-            command: 'GetObject'
+            command: 'GetObject',
+            assetId: asset._id
         });
 
         try {
@@ -117,11 +130,16 @@ router.get('/video/:id', async (req, res) => {
                 metadata: response.Metadata,
                 requestId: response.$metadata?.requestId,
                 acceptRanges: response.AcceptRanges,
-                etag: response.ETag
+                etag: response.ETag,
+                assetId: asset._id
             });
 
             if (!response.Body) {
-                console.error('S3 response has no body');
+                console.error('S3 response has no body:', {
+                    assetId: asset._id,
+                    key: key,
+                    bucket: process.env.AWS_BUCKET_NAME
+                });
                 return res.status(500).json({ 
                     error: 'Invalid S3 response',
                     details: 'S3 response has no body'
@@ -146,7 +164,13 @@ router.get('/video/:id', async (req, res) => {
                         contentType = 'video/mp4'; // Default to mp4
                 }
             }
-            console.log('Using content type:', contentType, 'for file:', key);
+            console.log('Using content type:', {
+                contentType,
+                file: key,
+                assetId: asset._id,
+                originalContentType: response.ContentType,
+                extension: path.extname(key).toLowerCase()
+            });
             
             // Set appropriate headers
             res.setHeader('Content-Type', contentType);
@@ -161,7 +185,8 @@ router.get('/video/:id', async (req, res) => {
                 userAgent,
                 acceptsVideo: req.headers.accept?.includes('video/'),
                 contentType,
-                contentLength: response.ContentLength
+                contentLength: response.ContentLength,
+                assetId: asset._id
             });
 
             // Handle range requests for video streaming
