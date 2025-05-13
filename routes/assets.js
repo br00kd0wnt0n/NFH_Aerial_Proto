@@ -75,20 +75,31 @@ router.get('/video/:id', async (req, res) => {
         // Extract S3 key from URL
         let key;
         try {
-            const s3Url = new URL(asset.url);
-            key = s3Url.pathname.slice(1); // Remove leading slash
-            console.log('Extracted S3 key:', {
-                key,
-                bucket: s3Url.hostname.split('.')[0],
-                region: s3Url.hostname.split('.')[1],
-                fullUrl: asset.url
-            });
+            // Handle both relative paths and full S3 URLs
+            if (asset.url.startsWith('http')) {
+                // Full S3 URL
+                const s3Url = new URL(asset.url);
+                key = s3Url.pathname.slice(1); // Remove leading slash
+                console.log('Extracted S3 key from full URL:', {
+                    key,
+                    bucket: s3Url.hostname.split('.')[0],
+                    region: s3Url.hostname.split('.')[1],
+                    fullUrl: asset.url
+                });
+            } else {
+                // Relative path
+                key = asset.url.startsWith('/') ? asset.url.slice(1) : asset.url;
+                console.log('Using relative path as S3 key:', {
+                    key,
+                    originalUrl: asset.url
+                });
+            }
             
             // Log file extension from key
             const extension = path.extname(key).toLowerCase();
-            console.log('File extension from S3 key:', extension);
+            console.log('File extension from key:', extension);
         } catch (urlError) {
-            console.error('Failed to parse asset URL:', {
+            console.error('Failed to process asset URL:', {
                 url: asset.url,
                 error: urlError.message,
                 stack: urlError.stack
