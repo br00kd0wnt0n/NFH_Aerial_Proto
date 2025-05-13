@@ -53,7 +53,8 @@ router.get('/video/:id', async (req, res) => {
             name: asset.name,
             url: asset.url,
             type: asset.type,
-            createdAt: asset.createdAt
+            createdAt: asset.createdAt,
+            originalName: asset.originalName // Log the original filename
         });
 
         // Validate asset URL
@@ -71,6 +72,10 @@ router.get('/video/:id', async (req, res) => {
             const s3Url = new URL(asset.url);
             key = s3Url.pathname.slice(1); // Remove leading slash
             console.log('Extracted S3 key:', key);
+            
+            // Log file extension from key
+            const extension = path.extname(key).toLowerCase();
+            console.log('File extension from S3 key:', extension);
         } catch (urlError) {
             console.error('Failed to parse asset URL:', {
                 url: asset.url,
@@ -110,7 +115,9 @@ router.get('/video/:id', async (req, res) => {
                 contentType: response.ContentType,
                 lastModified: response.LastModified,
                 metadata: response.Metadata,
-                requestId: response.$metadata?.requestId
+                requestId: response.$metadata?.requestId,
+                acceptRanges: response.AcceptRanges,
+                etag: response.ETag
             });
 
             if (!response.Body) {
@@ -121,15 +128,41 @@ router.get('/video/:id', async (req, res) => {
                 });
             }
 
-            // Determine content type from S3 response or default to mp4
-            const contentType = response.ContentType || 'video/mp4';
-            console.log('Using content type:', contentType);
+            // Determine content type from S3 response or file extension
+            let contentType = response.ContentType;
+            if (!contentType) {
+                const extension = path.extname(key).toLowerCase();
+                switch (extension) {
+                    case '.mp4':
+                        contentType = 'video/mp4';
+                        break;
+                    case '.webm':
+                        contentType = 'video/webm';
+                        break;
+                    case '.mov':
+                        contentType = 'video/quicktime';
+                        break;
+                    default:
+                        contentType = 'video/mp4'; // Default to mp4
+                }
+            }
+            console.log('Using content type:', contentType, 'for file:', key);
             
             // Set appropriate headers
             res.setHeader('Content-Type', contentType);
             res.setHeader('Content-Length', response.ContentLength);
             res.setHeader('Accept-Ranges', 'bytes');
             res.setHeader('Cache-Control', 'public, max-age=31536000');
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+
+            // Log browser compatibility
+            const userAgent = req.headers['user-agent'] || '';
+            console.log('Browser info:', {
+                userAgent,
+                acceptsVideo: req.headers.accept?.includes('video/'),
+                contentType,
+                contentLength: response.ContentLength
+            });
 
             // Handle range requests for video streaming
             const range = req.headers.range;
