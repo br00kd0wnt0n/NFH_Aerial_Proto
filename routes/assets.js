@@ -5,7 +5,7 @@ const fs = require('fs');
 const { Readable } = require('stream');
 const Asset = require('../models/asset');
 const { upload, s3Client } = require('../config/s3');
-const { DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 
 // Video proxy route
 router.get('/video/:id', async (req, res) => {
@@ -91,13 +91,38 @@ router.get('/video/:id', async (req, res) => {
                 key = asset.url.startsWith('/') ? asset.url.slice(1) : asset.url;
                 console.log('Using relative path as S3 key:', {
                     key,
-                    originalUrl: asset.url
+                    originalUrl: asset.url,
+                    bucket: process.env.AWS_BUCKET_NAME,
+                    fullS3Path: `${process.env.AWS_BUCKET_NAME}/${key}`
                 });
             }
             
             // Log file extension from key
             const extension = path.extname(key).toLowerCase();
             console.log('File extension from key:', extension);
+
+            // List objects in the bucket to help debug
+            try {
+                const listCommand = new ListObjectsV2Command({
+                    Bucket: process.env.AWS_BUCKET_NAME,
+                    Prefix: path.dirname(key) + '/'
+                });
+                const listedObjects = await s3Client.send(listCommand);
+                console.log('Available objects in bucket directory:', {
+                    directory: path.dirname(key),
+                    objects: listedObjects.Contents?.map(obj => ({
+                        key: obj.Key,
+                        size: obj.Size,
+                        lastModified: obj.LastModified
+                    })) || []
+                });
+            } catch (listError) {
+                console.error('Error listing bucket contents:', {
+                    error: listError.message,
+                    bucket: process.env.AWS_BUCKET_NAME,
+                    prefix: path.dirname(key)
+                });
+            }
         } catch (urlError) {
             console.error('Failed to process asset URL:', {
                 url: asset.url,
@@ -129,7 +154,8 @@ router.get('/video/:id', async (req, res) => {
             bucket: process.env.AWS_BUCKET_NAME,
             key: key,
             command: 'GetObject',
-            assetId: asset._id
+            assetId: asset._id,
+            fullS3Path: `${process.env.AWS_BUCKET_NAME}/${key}`
         });
 
         try {
