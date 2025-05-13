@@ -10,9 +10,27 @@ console.log('AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? '[HIDD
 console.log('AWS_REGION:', process.env.AWS_REGION || 'not set');
 console.log('AWS_BUCKET_NAME:', process.env.AWS_BUCKET_NAME || 'not set');
 
+// Validate required environment variables
+const requiredEnvVars = {
+    AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+    AWS_REGION: process.env.AWS_REGION,
+    AWS_BUCKET_NAME: process.env.AWS_BUCKET_NAME
+};
+
+// Check for missing environment variables
+const missingVars = Object.entries(requiredEnvVars)
+    .filter(([_, value]) => !value)
+    .map(([key]) => key);
+
+if (missingVars.length > 0) {
+    console.error('Missing required environment variables:', missingVars.join(', '));
+    throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+}
+
 // Configure AWS S3 client
 const s3Client = new S3Client({
-    region: process.env.AWS_REGION || 'us-east-1',
+    region: process.env.AWS_REGION,
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
