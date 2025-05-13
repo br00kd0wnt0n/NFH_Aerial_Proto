@@ -21,13 +21,23 @@ router.get('/video/:id', async (req, res) => {
         console.log('Found asset:', {
             id: asset._id,
             name: asset.name,
-            url: asset.url
+            url: asset.url,
+            type: asset.type
         });
 
         // Extract S3 key from URL
-        const s3Url = new URL(asset.url);
-        const key = s3Url.pathname.slice(1); // Remove leading slash
-        console.log('S3 key:', key);
+        let key;
+        try {
+            const s3Url = new URL(asset.url);
+            key = s3Url.pathname.slice(1); // Remove leading slash
+            console.log('S3 key:', key);
+        } catch (urlError) {
+            console.error('Invalid asset URL:', asset.url);
+            return res.status(500).json({ 
+                error: 'Invalid asset URL format',
+                details: urlError.message
+            });
+        }
 
         // Get the video stream from S3
         const command = new GetObjectCommand({
@@ -45,11 +55,16 @@ router.get('/video/:id', async (req, res) => {
             console.log('S3 response received:', {
                 contentLength: response.ContentLength,
                 contentType: response.ContentType,
-                lastModified: response.LastModified
+                lastModified: response.LastModified,
+                metadata: response.Metadata
             });
+
+            // Determine content type from S3 response or default to mp4
+            const contentType = response.ContentType || 'video/mp4';
+            console.log('Using content type:', contentType);
             
             // Set appropriate headers
-            res.setHeader('Content-Type', 'video/mp4');
+            res.setHeader('Content-Type', contentType);
             res.setHeader('Content-Length', response.ContentLength);
             res.setHeader('Accept-Ranges', 'bytes');
             res.setHeader('Cache-Control', 'public, max-age=31536000');
@@ -63,35 +78,78 @@ router.get('/video/:id', async (req, res) => {
                 const end = parts[1] ? parseInt(parts[1], 10) : response.ContentLength - 1;
                 const chunksize = (end - start) + 1;
 
+                if (start >= response.ContentLength || end >= response.ContentLength) {
+                    console.error('Invalid range request:', { start, end, contentLength: response.ContentLength });
+                    return res.status(416).json({ error: 'Requested range not satisfiable' });
+                }
+
                 res.setHeader('Content-Range', `bytes ${start}-${end}/${response.ContentLength}`);
                 res.setHeader('Content-Length', chunksize);
                 res.status(206);
 
-                // Create a read stream for the requested range
-                const stream = response.Body;
-                const chunks = [];
-                
-                for await (const chunk of stream) {
-                    chunks.push(chunk);
+                try {
+                    // Create a read stream for the requested range
+                    const stream = response.Body;
+                    const chunks = [];
+                    
+                    for await (const chunk of stream) {
+                        chunks.push(chunk);
+                    }
+                    
+                    const buffer = Buffer.concat(chunks);
+                    const chunk = buffer.slice(start, end + 1);
+                    res.send(chunk);
+                } catch (streamError) {
+                    console.error('Error processing video stream:', {
+                        error: streamError.message,
+                        start,
+                        end,
+                        contentLength: response.ContentLength
+                    });
+                    throw streamError;
                 }
-                
-                const buffer = Buffer.concat(chunks);
-                const chunk = buffer.slice(start, end + 1);
-                res.send(chunk);
             } else {
                 // Stream the entire file
-                const stream = response.Body;
-                if (stream instanceof Readable) {
-                    stream.pipe(res);
-                } else {
-                    // If not a Readable stream, convert it
-                    const readableStream = new Readable({
-                        read() {
-                            this.push(stream);
-                            this.push(null);
-                        }
-                    });
-                    readableStream.pipe(res);
+                try {
+                    const stream = response.Body;
+                    if (stream instanceof Readable) {
+                        stream.on('error', (streamError) => {
+                            console.error('Stream error:', streamError);
+                            if (!res.headersSent) {
+                                res.status(500).json({ 
+                                    error: 'Error streaming video',
+                                    details: streamError.message
+                                });
+                            }
+                        });
+                        stream.pipe(res);
+                    } else {
+                        // If not a Readable stream, convert it
+                        const readableStream = new Readable({
+                            read() {
+                                try {
+                                    this.push(stream);
+                                    this.push(null);
+                                } catch (error) {
+                                    console.error('Error in readable stream:', error);
+                                    this.destroy(error);
+                                }
+                            }
+                        });
+                        readableStream.on('error', (streamError) => {
+                            console.error('Readable stream error:', streamError);
+                            if (!res.headersSent) {
+                                res.status(500).json({ 
+                                    error: 'Error streaming video',
+                                    details: streamError.message
+                                });
+                            }
+                        });
+                        readableStream.pipe(res);
+                    }
+                } catch (streamError) {
+                    console.error('Error setting up video stream:', streamError);
+                    throw streamError;
                 }
             }
         } catch (s3Error) {
@@ -100,7 +158,8 @@ router.get('/video/:id', async (req, res) => {
                 code: s3Error.code,
                 requestId: s3Error.$metadata?.requestId,
                 bucket: process.env.AWS_BUCKET_NAME,
-                key: key
+                key: key,
+                stack: s3Error.stack
             });
             throw s3Error;
         }
@@ -111,11 +170,25 @@ router.get('/video/:id', async (req, res) => {
             stack: error.stack,
             assetId: req.params.id
         });
-        res.status(500).json({ 
-            error: 'Error streaming video',
-            details: error.message,
-            code: error.code
-        });
+        
+        // Send appropriate error response
+        if (error.code === 'NoSuchKey') {
+            res.status(404).json({ 
+                error: 'Video not found in S3',
+                details: error.message
+            });
+        } else if (error.code === 'AccessDenied') {
+            res.status(403).json({ 
+                error: 'Access denied to video',
+                details: error.message
+            });
+        } else {
+            res.status(500).json({ 
+                error: 'Error streaming video',
+                details: error.message,
+                code: error.code
+            });
+        }
     }
 });
 
