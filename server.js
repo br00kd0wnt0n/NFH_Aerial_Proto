@@ -63,6 +63,41 @@ app.use((req, res, next) => {
     next();
 });
 
+// Add request logging middleware
+app.use((req, res, next) => {
+    console.log('=== Incoming Request ===', new Date().toISOString());
+    console.log({
+        method: req.method,
+        url: req.url,
+        path: req.path,
+        query: req.query,
+        params: req.params,
+        headers: {
+            range: req.headers.range,
+            accept: req.headers.accept,
+            'user-agent': req.headers['user-agent']
+        }
+    });
+
+    // Log response
+    const originalSend = res.send;
+    res.send = function (body) {
+        console.log('=== Outgoing Response ===', new Date().toISOString());
+        console.log({
+            method: req.method,
+            url: req.url,
+            statusCode: res.statusCode,
+            headers: res.getHeaders()
+        });
+        if (res.statusCode >= 400) {
+            console.error('Error response body:', body);
+        }
+        return originalSend.call(this, body);
+    };
+
+    next();
+});
+
 // Serve static files
 app.use('/admin', express.static(path.join(__dirname, 'admin'), {
     setHeaders: (res, filePath) => {
@@ -463,8 +498,25 @@ app.use('/api', (req, res, next) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error('Error:', err);
-    res.status(500).send('Something broke!');
+    console.error('=== Unhandled Error ===', new Date().toISOString());
+    console.error({
+        error: err.message,
+        stack: err.stack,
+        code: err.code,
+        url: req.url,
+        method: req.method,
+        headers: req.headers
+    });
+
+    // Don't expose internal errors to client
+    const statusCode = err.statusCode || 500;
+    const message = statusCode === 500 ? 'Internal Server Error' : err.message;
+    
+    res.status(statusCode).json({
+        error: message,
+        code: err.code,
+        timestamp: new Date().toISOString()
+    });
 });
 
 // 404 handler
