@@ -9,9 +9,10 @@ const { DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 
 // Video proxy route
 router.get('/video/:id', async (req, res) => {
-    // Log the full request details
-    console.log('=== Video Proxy Request ===');
+    // Log the full request details with timestamp
+    console.log('=== Video Proxy Request ===', new Date().toISOString());
     console.log('Request details:', {
+        timestamp: new Date().toISOString(),
         method: req.method,
         url: req.url,
         params: req.params,
