@@ -347,12 +347,27 @@ router.post('/', upload.single('asset'), async (req, res) => {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
+        // Log detailed file information
+        console.log('Uploaded file details:', {
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+            location: req.file.location,
+            key: req.file.key,
+            bucket: req.file.bucket,
+            metadata: req.file.metadata,
+            contentType: req.file.contentType
+        });
+
         const { houseId, type, name } = req.body;
         const asset = new Asset({
             houseId,
             type,
             name: name || req.file.originalname,
             url: req.file.location,
+            originalName: req.file.originalname, // Store original filename
+            mimeType: req.file.mimetype, // Store mime type
+            size: req.file.size, // Store file size
             playbackRules: {
                 loop: true,
                 autoplay: true,
@@ -361,6 +376,14 @@ router.post('/', upload.single('asset'), async (req, res) => {
         });
 
         await asset.save();
+        console.log('Asset saved to database:', {
+            id: asset._id,
+            name: asset.name,
+            type: asset.type,
+            url: asset.url,
+            mimeType: asset.mimeType,
+            size: asset.size
+        });
         res.json(asset);
     } catch (error) {
         console.error('Error uploading asset:', error);
