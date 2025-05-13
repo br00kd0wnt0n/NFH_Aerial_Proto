@@ -1,9 +1,25 @@
+// Load environment variables first, before any other requires
+require('dotenv').config();
+
+// Log all environment variables (safely)
+console.log('Environment Variables Status:');
+const envVars = {
+    NODE_ENV: process.env.NODE_ENV,
+    PORT: process.env.PORT,
+    MONGODB_URI: process.env.MONGODB_URI ? '[HIDDEN]' : 'not set',
+    AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID ? '[HIDDEN]' : 'not set',
+    AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY ? '[HIDDEN]' : 'not set',
+    AWS_REGION: process.env.AWS_REGION || 'not set',
+    AWS_BUCKET_NAME: process.env.AWS_BUCKET_NAME || 'not set'
+};
+
+console.log('Environment Variables:', JSON.stringify(envVars, null, 2));
+
 const express = require('express');
 const mongoose = require('mongoose');
 const { MongoClient } = require('mongodb');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
 const multer = require('multer');
 const assetRoutes = require('./routes/assets');
 const hotspotRoutes = require('./routes/hotspots');
@@ -16,17 +32,6 @@ const upload = multer();
 
 // Set environment
 const isProduction = process.env.NODE_ENV === 'production';
-
-// Add this near the top of the file, after the requires but before any route definitions
-console.log('Server Environment Variables:');
-console.log('NODE_ENV:', process.env.NODE_ENV);
-console.log('PORT:', process.env.PORT);
-console.log('AWS Variables Present:', {
-    AWS_ACCESS_KEY_ID: !!process.env.AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY: !!process.env.AWS_SECRET_ACCESS_KEY,
-    AWS_REGION: !!process.env.AWS_REGION,
-    AWS_BUCKET_NAME: !!process.env.AWS_BUCKET_NAME
-});
 
 // Security headers middleware
 app.use((req, res, next) => {

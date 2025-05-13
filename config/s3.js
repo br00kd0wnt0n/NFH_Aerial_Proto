@@ -3,8 +3,9 @@ const multer = require('multer');
 const multerS3 = require('multer-s3');
 const path = require('path');
 
-// Function to validate environment variables
-function validateEnvVars() {
+// Factory function to create S3 configuration
+function createS3Config() {
+    // Validate environment variables
     const requiredEnvVars = {
         AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
         AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
@@ -13,7 +14,7 @@ function validateEnvVars() {
     };
 
     // Debug logging for environment variables
-    console.log('AWS Configuration:');
+    console.log('S3 Configuration - Environment Variables:');
     console.log('AWS_ACCESS_KEY_ID:', requiredEnvVars.AWS_ACCESS_KEY_ID ? '[HIDDEN]' : 'not set');
     console.log('AWS_SECRET_ACCESS_KEY:', requiredEnvVars.AWS_SECRET_ACCESS_KEY ? '[HIDDEN]' : 'not set');
     console.log('AWS_REGION:', requiredEnvVars.AWS_REGION || 'not set');
@@ -30,30 +31,20 @@ function validateEnvVars() {
         throw new Error(errorMsg);
     }
 
-    return requiredEnvVars;
-}
-
-// Initialize S3 configuration
-let s3Client, upload;
-
-try {
-    // Validate environment variables first
-    const envVars = validateEnvVars();
-
     // Configure AWS S3 client
-    s3Client = new S3Client({
-        region: envVars.AWS_REGION,
+    const s3Client = new S3Client({
+        region: requiredEnvVars.AWS_REGION,
         credentials: {
-            accessKeyId: envVars.AWS_ACCESS_KEY_ID,
-            secretAccessKey: envVars.AWS_SECRET_ACCESS_KEY
+            accessKeyId: requiredEnvVars.AWS_ACCESS_KEY_ID,
+            secretAccessKey: requiredEnvVars.AWS_SECRET_ACCESS_KEY
         }
     });
 
     // Configure multer for S3 uploads
-    upload = multer({
+    const upload = multer({
         storage: multerS3({
             s3: s3Client,
-            bucket: envVars.AWS_BUCKET_NAME,
+            bucket: requiredEnvVars.AWS_BUCKET_NAME,
             metadata: function (req, file, cb) {
                 cb(null, { fieldName: file.fieldname });
             },
@@ -73,10 +64,17 @@ try {
         }
     });
 
+    return { s3Client, upload };
+}
+
+// Initialize S3 configuration
+let s3Config;
+try {
+    s3Config = createS3Config();
     console.log('S3 configuration initialized successfully');
 } catch (error) {
     console.error('Failed to initialize S3 configuration:', error);
     throw error;
 }
 
-module.exports = { s3Client, upload }; 
+module.exports = s3Config; 
