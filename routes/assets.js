@@ -9,33 +9,84 @@ const { DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 
 // Video proxy route
 router.get('/video/:id', async (req, res) => {
+    // Log the full request details
+    console.log('=== Video Proxy Request ===');
+    console.log('Request details:', {
+        method: req.method,
+        url: req.url,
+        params: req.params,
+        query: req.query,
+        headers: {
+            range: req.headers.range,
+            accept: req.headers.accept,
+            'user-agent': req.headers['user-agent']
+        }
+    });
+
+    // Add request timeout
+    req.setTimeout(30000); // 30 seconds timeout
+
     try {
-        console.log('Video proxy request for asset ID:', req.params.id);
+        console.log('Processing video request for asset ID:', req.params.id);
         
-        const asset = await Asset.findById(req.params.id);
-        if (!asset) {
-            console.error('Asset not found:', req.params.id);
-            return res.status(404).json({ error: 'Asset not found' });
+        // Validate asset ID format
+        if (!req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+            console.error('Invalid asset ID format:', req.params.id);
+            return res.status(400).json({ 
+                error: 'Invalid asset ID format',
+                details: 'Asset ID must be a valid MongoDB ObjectId'
+            });
         }
 
-        console.log('Found asset:', {
+        const asset = await Asset.findById(req.params.id);
+        if (!asset) {
+            console.error('Asset not found in database:', req.params.id);
+            return res.status(404).json({ 
+                error: 'Asset not found',
+                details: 'No asset found with the provided ID'
+            });
+        }
+
+        console.log('Found asset in database:', {
             id: asset._id,
             name: asset.name,
             url: asset.url,
-            type: asset.type
+            type: asset.type,
+            createdAt: asset.createdAt
         });
+
+        // Validate asset URL
+        if (!asset.url) {
+            console.error('Asset has no URL:', asset._id);
+            return res.status(500).json({ 
+                error: 'Invalid asset configuration',
+                details: 'Asset has no URL configured'
+            });
+        }
 
         // Extract S3 key from URL
         let key;
         try {
             const s3Url = new URL(asset.url);
             key = s3Url.pathname.slice(1); // Remove leading slash
-            console.log('S3 key:', key);
+            console.log('Extracted S3 key:', key);
         } catch (urlError) {
-            console.error('Invalid asset URL:', asset.url);
+            console.error('Failed to parse asset URL:', {
+                url: asset.url,
+                error: urlError.message
+            });
             return res.status(500).json({ 
                 error: 'Invalid asset URL format',
                 details: urlError.message
+            });
+        }
+
+        // Validate S3 configuration
+        if (!process.env.AWS_BUCKET_NAME) {
+            console.error('AWS_BUCKET_NAME not configured');
+            return res.status(500).json({ 
+                error: 'Server configuration error',
+                details: 'S3 bucket not configured'
             });
         }
 
@@ -47,7 +98,8 @@ router.get('/video/:id', async (req, res) => {
 
         console.log('Sending GetObjectCommand to S3:', {
             bucket: process.env.AWS_BUCKET_NAME,
-            key: key
+            key: key,
+            command: 'GetObject'
         });
 
         try {
@@ -56,8 +108,17 @@ router.get('/video/:id', async (req, res) => {
                 contentLength: response.ContentLength,
                 contentType: response.ContentType,
                 lastModified: response.LastModified,
-                metadata: response.Metadata
+                metadata: response.Metadata,
+                requestId: response.$metadata?.requestId
             });
+
+            if (!response.Body) {
+                console.error('S3 response has no body');
+                return res.status(500).json({ 
+                    error: 'Invalid S3 response',
+                    details: 'S3 response has no body'
+                });
+            }
 
             // Determine content type from S3 response or default to mp4
             const contentType = response.ContentType || 'video/mp4';
@@ -72,15 +133,22 @@ router.get('/video/:id', async (req, res) => {
             // Handle range requests for video streaming
             const range = req.headers.range;
             if (range) {
-                console.log('Range request:', range);
+                console.log('Processing range request:', range);
                 const parts = range.replace(/bytes=/, '').split('-');
                 const start = parseInt(parts[0], 10);
                 const end = parts[1] ? parseInt(parts[1], 10) : response.ContentLength - 1;
                 const chunksize = (end - start) + 1;
 
                 if (start >= response.ContentLength || end >= response.ContentLength) {
-                    console.error('Invalid range request:', { start, end, contentLength: response.ContentLength });
-                    return res.status(416).json({ error: 'Requested range not satisfiable' });
+                    console.error('Invalid range request:', { 
+                        start, 
+                        end, 
+                        contentLength: response.ContentLength 
+                    });
+                    return res.status(416).json({ 
+                        error: 'Requested range not satisfiable',
+                        details: `Range ${start}-${end} exceeds content length ${response.ContentLength}`
+                    });
                 }
 
                 res.setHeader('Content-Range', `bytes ${start}-${end}/${response.ContentLength}`);
@@ -98,13 +166,20 @@ router.get('/video/:id', async (req, res) => {
                     
                     const buffer = Buffer.concat(chunks);
                     const chunk = buffer.slice(start, end + 1);
+                    console.log('Sending range response:', {
+                        start,
+                        end,
+                        chunkSize: chunk.length,
+                        totalSize: response.ContentLength
+                    });
                     res.send(chunk);
                 } catch (streamError) {
                     console.error('Error processing video stream:', {
                         error: streamError.message,
                         start,
                         end,
-                        contentLength: response.ContentLength
+                        contentLength: response.ContentLength,
+                        stack: streamError.stack
                     });
                     throw streamError;
                 }
@@ -114,7 +189,10 @@ router.get('/video/:id', async (req, res) => {
                     const stream = response.Body;
                     if (stream instanceof Readable) {
                         stream.on('error', (streamError) => {
-                            console.error('Stream error:', streamError);
+                            console.error('Stream error:', {
+                                error: streamError.message,
+                                stack: streamError.stack
+                            });
                             if (!res.headersSent) {
                                 res.status(500).json({ 
                                     error: 'Error streaming video',
@@ -122,8 +200,10 @@ router.get('/video/:id', async (req, res) => {
                                 });
                             }
                         });
+                        console.log('Starting full video stream');
                         stream.pipe(res);
                     } else {
+                        console.log('Converting non-Readable stream to Readable');
                         // If not a Readable stream, convert it
                         const readableStream = new Readable({
                             read() {
@@ -131,13 +211,19 @@ router.get('/video/:id', async (req, res) => {
                                     this.push(stream);
                                     this.push(null);
                                 } catch (error) {
-                                    console.error('Error in readable stream:', error);
+                                    console.error('Error in readable stream:', {
+                                        error: error.message,
+                                        stack: error.stack
+                                    });
                                     this.destroy(error);
                                 }
                             }
                         });
                         readableStream.on('error', (streamError) => {
-                            console.error('Readable stream error:', streamError);
+                            console.error('Readable stream error:', {
+                                error: streamError.message,
+                                stack: streamError.stack
+                            });
                             if (!res.headersSent) {
                                 res.status(500).json({ 
                                     error: 'Error streaming video',
@@ -148,7 +234,10 @@ router.get('/video/:id', async (req, res) => {
                         readableStream.pipe(res);
                     }
                 } catch (streamError) {
-                    console.error('Error setting up video stream:', streamError);
+                    console.error('Error setting up video stream:', {
+                        error: streamError.message,
+                        stack: streamError.stack
+                    });
                     throw streamError;
                 }
             }
@@ -168,7 +257,8 @@ router.get('/video/:id', async (req, res) => {
             error: error.message,
             code: error.code,
             stack: error.stack,
-            assetId: req.params.id
+            assetId: req.params.id,
+            timestamp: new Date().toISOString()
         });
         
         // Send appropriate error response
@@ -180,6 +270,11 @@ router.get('/video/:id', async (req, res) => {
         } else if (error.code === 'AccessDenied') {
             res.status(403).json({ 
                 error: 'Access denied to video',
+                details: error.message
+            });
+        } else if (error.code === 'NetworkingError') {
+            res.status(503).json({ 
+                error: 'S3 service unavailable',
                 details: error.message
             });
         } else {
