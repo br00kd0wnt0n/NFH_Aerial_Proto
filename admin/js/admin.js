@@ -10,11 +10,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize toast for notifications
     const notificationToast = new bootstrap.Toast(document.getElementById('notificationToast'));
     
+    // Show notification function
+    function showNotification(message, type = 'success') {
+        const toastElement = document.getElementById('notificationToast');
+        if (!toastElement) return;
+
+        const toastBody = toastElement.querySelector('.toast-body');
+        if (toastBody) {
+            toastBody.textContent = message;
+        }
+
+        // Update toast header based on type
+        const toastHeader = toastElement.querySelector('.toast-header strong');
+        if (toastHeader) {
+            toastHeader.textContent = type === 'error' ? 'Error' : 'Success';
+        }
+
+        // Show the toast
+        const toast = new bootstrap.Toast(toastElement);
+        toast.show();
+    }
+    
     // Global variables
     let currentHouse = 1; // Set default house ID
     let editingHotspotId = null;
     let assetTypes = null;
     let assets = []; // Add global assets array
+    let isInitializing = false; // Add flag to prevent concurrent initialization
+    let currentGlobalVideos = null; // Add variable to store current global videos state
 
     // Initialize DOM elements
     const hotspotModal = document.getElementById('hotspotModal');
@@ -25,6 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hotspotList = document.querySelector('.hotspot-list');
     const houseSelector = document.getElementById('houseSelector');
     const assetHouseSelector = document.getElementById('assetHouseSelector');
+    const playlistHouseSelector = document.getElementById('playlistHouseSelector');
     const assetForm = document.getElementById('assetForm');
     const startDrawingBtn = document.getElementById('startDrawing');
     const finishDrawingBtn = document.getElementById('finishDrawing');
@@ -49,31 +73,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     navButtons.forEach(button => {
         button.addEventListener('click', async () => {
             const targetSection = button.dataset.section;
-            sections.forEach(section => {
-                section.style.display = section.id === `${targetSection}Section` ? 'block' : 'none';
-            });
+            
+            // Update active state of navigation buttons
             navButtons.forEach(btn => btn.classList.remove('active'));
             button.classList.add('active');
-
-            // Load hotspots when switching to Assets section
-            if (targetSection === 'assets') {
-                await loadHotspots(currentHouse);
-                await loadAssets(currentHouse);
-            }
-            // Load playlists when switching to Playlists section
-            else if (targetSection === 'playlists') {
-                console.log('Loading playlists for house:', currentHouse);
-                const playlists = await loadPlaylists(currentHouse);
-                console.log('Loaded playlists:', playlists);
-                updatePlaylistUI(playlists);
-            }
-            // Refresh hotspot positions when switching to Hotspots section
-            else if (targetSection === 'hotspots') {
-                await loadHotspots(currentHouse);
-                loadHotspots(currentHouse).then(() => {
+            
+            // Hide all sections
+            sections.forEach(section => section.style.display = 'none');
+            
+            // Show target section
+            const targetElement = document.getElementById(`${targetSection}Section`);
+            if (targetElement) {
+                targetElement.style.display = 'block';
+                
+                // Load section-specific data
+                if (targetSection === 'assets') {
+                    await loadAssets(currentHouse);
+                } else if (targetSection === 'playlists') {
+                    await initializeVideoPlaylists(currentHouse);
+                } else if (targetSection === 'hotspots') {
                     updateHotspotList();
                     updatePreview();
-                });
+                }
             }
         });
     });
@@ -89,7 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             await saveHotspots();
             
             // Force reload of hotspots and assets in the front end
-            const response = await fetch('/api/reload', {
+            const response = await fetch(`/api/reload?_=${Date.now()}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -124,34 +145,54 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // House selection event handlers
-    houseSelector.addEventListener('change', async (e) => {
-        const newHouseId = parseInt(e.target.value);
-        console.log('House selector changed to:', newHouseId);
+    async function updateCurrentHouse(newHouseId) {
+        if (currentHouse === newHouseId) return;
+        console.log('Updating current house to:', newHouseId);
         currentHouse = newHouseId;
+        
+        // Update all house selectors
+        if (houseSelector) houseSelector.value = newHouseId.toString();
+        if (assetHouseSelector) assetHouseSelector.value = newHouseId.toString();
+        if (playlistHouseSelector) playlistHouseSelector.value = newHouseId.toString();
+        
         try {
+            // Load house-specific data (hotspots and assets) in sequence
             await loadHotspots(newHouseId);
-            await loadAerialVideo(newHouseId);
+            await loadAssets(newHouseId);
+            
+            // Update preview if in hotspots section
+            const hotspotsSection = document.getElementById('hotspotsSection');
+            if (hotspotsSection && hotspotsSection.style.display !== 'none') {
+                updateHotspotList();
+                updatePreview();
+            }
+            
+            // Do NOT reload global videos here - they should persist across house changes
         } catch (error) {
-            console.error('Error loading house data:', error);
+            console.error('Error updating house data:', error);
+            showNotification('Error updating house data: ' + error.message, 'error');
         }
+    }
+
+    // Update house selector event listeners
+    houseSelector.addEventListener('change', (e) => {
+        updateCurrentHouse(parseInt(e.target.value));
     });
 
-    assetHouseSelector.addEventListener('change', async (e) => {
-        const houseId = parseInt(e.target.value);
-        console.log('Asset house selector changed to:', houseId);
-        currentHouse = houseId;
-        try {
-            await loadHotspots(houseId);
-            await loadAssets(houseId);
-        } catch (error) {
-            console.error('Error loading house assets:', error);
-        }
+    assetHouseSelector.addEventListener('change', (e) => {
+        updateCurrentHouse(parseInt(e.target.value));
     });
+
+    if (playlistHouseSelector) {
+        playlistHouseSelector.addEventListener('change', (e) => {
+            updateCurrentHouse(parseInt(e.target.value));
+        });
+    }
 
     // Load playlists from server
     async function loadPlaylists(houseId) {
         try {
-            const response = await fetch(`/api/playlists?houseId=${houseId}`);
+            const response = await fetch(`/api/playlists?houseId=${houseId}&_=${Date.now()}`);
             if (!response.ok) throw new Error('Failed to load playlists');
             const data = await response.json();
             console.log('Raw playlist data:', data);
@@ -171,7 +212,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             console.log('Loading hotspots for house:', houseId);
-            const response = await fetch(`/api/hotspots?houseId=${houseId}`);
+            const response = await fetch(`/api/hotspots?houseId=${houseId}&_=${Date.now()}`);
             if (!response.ok) {
                 throw new Error('Failed to load hotspots');
             }
@@ -214,7 +255,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function loadAssets(houseId) {
         try {
             console.log('Loading assets for house:', houseId);
-            const response = await fetch(`/api/assets?houseId=${houseId}`);
+            const response = await fetch(`/api/assets?houseId=${houseId}&_=${Date.now()}`);
             if (!response.ok) throw new Error('Failed to load assets');
             
             const data = await response.json();
@@ -235,7 +276,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </video>
                     </td>
                     <td>
-                        <button class="btn btn-sm btn-outline-danger" data-asset-id="${asset._id}">
+                        <button class="btn btn-sm btn-outline-light me-2" onclick="editAsset('${asset._id}', '${asset.type}')">
+                            Edit
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteAsset('${asset._id}')">
                             Delete
                         </button>
                     </td>
@@ -243,8 +287,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             `).join('');
 
             // Add event listeners to delete buttons
-            tableBody.querySelectorAll('button[data-asset-id]').forEach(button => {
-                button.addEventListener('click', () => deleteAsset(button.dataset.assetId));
+            tableBody.querySelectorAll('button[onclick^="deleteAsset"]').forEach(button => {
+                button.addEventListener('click', () => deleteAsset(button.closest('tr').querySelector('button[onclick^="deleteAsset"]').getAttribute('onclick').match(/'([^']+)'/)[1]));
             });
 
             // Initialize video optimization for all videos in the table
@@ -262,62 +306,174 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Initialize video playlists
     async function initializeVideoPlaylists(houseId) {
+        if (isInitializing) {
+            console.log('Initialization already in progress, skipping...');
+            return;
+        }
+        
+        isInitializing = true;
         try {
-            // Load assets first to ensure we have them for the playlist UI
-            await loadAssets(houseId);
+            // Load global videos and assets in parallel
+            const [globalVideosResponse, assetsResponse] = await Promise.all([
+                fetch(`/api/global-videos?_=${Date.now()}`),
+                fetch(`/api/assets?houseId=${houseId}&_=${Date.now()}`)
+            ]);
+
+            if (!globalVideosResponse.ok) throw new Error('Failed to load global videos');
+            if (!assetsResponse.ok) throw new Error('Failed to load assets');
+
+            const { globalVideos } = await globalVideosResponse.json();
+            const { assets: houseAssets } = await assetsResponse.json();
             
-            const playlists = await loadPlaylists(houseId);
-            console.log('Loaded playlists:', playlists);
+            // Store assets globally for use in other functions
+            assets = houseAssets;
             
-            // Get hotspots for the current house
-            const response = await fetch(`/api/hotspots?houseId=${houseId}`);
-            if (!response.ok) throw new Error('Failed to load hotspots');
-            const data = await response.json();
-            const currentHotspots = data.hotspots || [];
+            // Store current global videos state
+            currentGlobalVideos = globalVideos;
             
-            // Initialize playlists structure
-            const updatedPlaylists = {
-                houseId: parseInt(houseId),
-                playlists: {}
-            };
+            // Update the global videos UI
+            updateGlobalVideosUI(globalVideos);
             
-            // Add global playlists
-            updatedPlaylists.playlists.global = {
-                aerial: { videoId: null },
-                zoomOut: { videoId: null }
-            };
+            // Load hotspot videos for the current house
+            const hotspotVideosResponse = await fetch(`/api/hotspot-videos?houseId=${houseId}&_=${Date.now()}`);
+            if (!hotspotVideosResponse.ok) throw new Error('Failed to load hotspot videos');
+            const { hotspotVideos } = await hotspotVideosResponse.json();
             
-            // Add playlists for each primary hotspot
-            currentHotspots.forEach(hotspot => {
-                if (hotspot.type === 'primary') {
-                    const hotspotId = hotspot._id;
-                    updatedPlaylists.playlists[hotspotId] = {
-                        diveIn: { videoId: null },
-                        floorLevel: { videoId: null }
-                    };
-                    
-                    // If there's existing playlist data, use it
-                    if (playlists[hotspotId]) {
-                        updatedPlaylists.playlists[hotspotId] = {
-                            diveIn: playlists[hotspotId].diveIn || { videoId: null },
-                            floorLevel: playlists[hotspotId].floorLevel || { videoId: null }
-                        };
-                    }
-                }
-            });
+            // Update the hotspot videos UI
+            updateHotspotVideosUI(hotspotVideos);
             
-            console.log('Updated playlists structure:', updatedPlaylists);
-            
-            // Save the updated playlists
-            await savePlaylists(houseId, updatedPlaylists);
-            
-            // Update the UI with the new playlists
-            updatePlaylistUI(updatedPlaylists.playlists);
-            
-            return updatedPlaylists;
         } catch (error) {
             console.error('Error initializing video playlists:', error);
-            return {};
+            showNotification('Error loading video playlists: ' + error.message, 'error');
+        } finally {
+            isInitializing = false;
+        }
+    }
+
+    // Update global videos UI
+    function updateGlobalVideosUI(globalVideos) {
+        if (!globalVideos) return;
+        
+        // Get available videos
+        const aerialVideos = assets.filter(asset => asset.type === 'aerial');
+        const transitionVideos = assets.filter(asset => asset.type === 'transition');
+        
+        // Update each global video select
+        const globalVideoTypes = {
+            kopAerial: { videos: aerialVideos, label: 'KOP Aerial' },
+            dallasAerial: { videos: aerialVideos, label: 'DALLAS Aerial' },
+            kopToDallas: { videos: transitionVideos, label: 'KOP to DALLAS Transition' },
+            dallasToKop: { videos: transitionVideos, label: 'DALLAS to KOP Transition' }
+        };
+        
+        Object.entries(globalVideoTypes).forEach(([type, { videos, label }]) => {
+            const select = document.getElementById(`${type}Select`);
+            if (!select) return;
+            
+            // Store current value
+            const currentValue = select.value;
+            
+            // Update options
+            select.innerHTML = `
+                <option value="">Select ${label}</option>
+                ${videos.map(asset => `
+                    <option value="${asset._id}" 
+                        ${globalVideos[type]?.videoId === asset._id ? 'selected' : ''}>
+                        ${asset.name || 'Unnamed Asset'}
+                    </option>
+                `).join('')}
+            `;
+            
+            // Restore current value if it exists in new options
+            if (currentValue && videos.some(v => v._id === currentValue)) {
+                select.value = currentValue;
+            }
+            
+            // Update preview if it exists
+            const preview = document.querySelector(`#${type}Preview`);
+            if (preview && globalVideos[type]?.videoId) {
+                const video = videos.find(v => v._id === globalVideos[type].videoId);
+                if (video) {
+                    preview.src = video.url;
+                    preview.style.display = 'block';
+                }
+            }
+            
+            // Add change event listener if not already present
+            if (!select.hasEventListener) {
+                select.addEventListener('change', () => updateGlobalVideo(type, select.value));
+                select.hasEventListener = true;
+            }
+        });
+    }
+
+    // Update global video
+    async function updateGlobalVideo(type, videoId) {
+        console.log("updateGlobalVideo called with type:", type, "videoId:", videoId);
+        try {
+            const payload = { type, videoId };
+            const response = await fetch('/api/global-videos', {
+                method: 'POST',
+                
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("Error updating global video:", errorText);
+                throw new Error(errorText);
+            }
+            
+            const data = await response.json();
+            console.log("updateGlobalVideo response:", data);
+            
+            // Update the UI immediately with the new data
+            if (data.globalVideos) {
+                // Update the select element
+                const select = document.getElementById(`${type}Select`);
+                if (select) {
+                    select.value = videoId;
+                }
+                
+                // Update the preview if it exists
+                const preview = document.querySelector(`#${type}Preview`);
+                if (preview && videoId) {
+                    const video = assets.find(a => a._id === videoId);
+                    if (video) {
+                        preview.src = video.url;
+                        preview.style.display = 'block';
+                    }
+                }
+                
+                // Show success notification
+                showNotification(`Global video updated successfully for ${type}`, 'success');
+            }
+        } catch (error) {
+            console.error("Error in updateGlobalVideo:", error);
+            showNotification(`Error updating global video: ${error.message}`, 'error');
+        }
+    }
+
+    // Save global videos
+    async function saveGlobalVideos(globalVideos) {
+        try {
+            const response = await fetch('/api/global-videos', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ globalVideos })
+            });
+            
+            if (!response.ok) throw new Error('Failed to save global videos');
+            
+            const result = await response.json();
+            console.log('Saved global videos:', result);
+            return result;
+        } catch (error) {
+            console.error('Error saving global videos:', error);
+            throw error;
         }
     }
 
@@ -325,7 +481,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function savePlaylists(houseId, playlists) {
         try {
             console.log('Saving playlists:', playlists);
-            const response = await fetch(`/api/playlists?houseId=${houseId}`, {
+            const response = await fetch(`/api/playlists?houseId=${houseId}&_=${Date.now()}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -359,6 +515,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 progress: document.getElementById('aerialUploadProgress'),
                 currentAsset: document.getElementById('aerialCurrentAsset'),
                 type: 'aerial'
+            },
+            transition: {
+                uploadArea: document.getElementById('transitionUploadArea'),
+                input: document.getElementById('transitionUpload'),
+                progress: document.getElementById('transitionUploadProgress'),
+                currentAsset: document.getElementById('transitionCurrentAsset'),
+                type: 'transition'
             },
             zoomOut: {
                 uploadArea: document.getElementById('zoomOutUploadArea'),
@@ -460,17 +623,32 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="card bg-dark">
                     <div class="card-body">
                         <h6 class="card-title">${hotspot.title} Zone</h6>
-                        <div class="upload-area" id="zoneTransitionUploadArea_${hotspot._id}">
-                            <p class="mb-2">Zone Transition Video</p>
-                            <input type="file" class="d-none" id="zoneTransitionUpload_${hotspot._id}" accept="video/*">
-                            <button class="btn btn-outline-light" onclick="document.getElementById('zoneTransitionUpload_${hotspot._id}').click()">
+                        <div class="mb-3">
+                            <div class="upload-area" id="zoneTransitionUploadArea_${hotspot._id}">
+                                <p class="mb-2">Dive In Video</p>
+                                <input type="file" class="d-none" id="zoneTransitionUpload_${hotspot._id}" accept="video/*">
+                                <button class="btn btn-outline-light" onclick="document.getElementById('zoneTransitionUpload_${hotspot._id}').click()">
+                                    Select Video
+                                </button>
+                            </div>
+                            <div class="progress d-none" id="zoneTransitionUploadProgress_${hotspot._id}">
+                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <div class="current-asset mt-2" id="zoneTransitionCurrentAsset_${hotspot._id}">
+                                <!-- Current asset will be shown here -->
+                            </div>
+                        </div>
+                        <div class="upload-area" id="zoomOutUploadArea_${hotspot._id}">
+                            <p class="mb-2">Zoom Out Video</p>
+                            <input type="file" class="d-none" id="zoomOutUpload_${hotspot._id}" accept="video/*">
+                            <button class="btn btn-outline-light" onclick="document.getElementById('zoomOutUpload_${hotspot._id}').click()">
                                 Select Video
                             </button>
                         </div>
-                        <div class="progress d-none" id="zoneTransitionUploadProgress_${hotspot._id}">
+                        <div class="progress d-none" id="zoomOutUploadProgress_${hotspot._id}">
                             <div class="progress-bar" role="progressbar" style="width: 0%"></div>
                         </div>
-                        <div class="current-asset mt-2" id="zoneTransitionCurrentAsset_${hotspot._id}">
+                        <div class="current-asset mt-2" id="zoomOutCurrentAsset_${hotspot._id}">
                             <!-- Current asset will be shown here -->
                         </div>
                     </div>
@@ -504,31 +682,67 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Initialize upload areas for each zone
         currentHotspots.forEach(hotspot => {
-            // Zone transition upload
-            const zoneUploadArea = document.getElementById(`zoneTransitionUploadArea_${hotspot._id}`);
-            const zoneInput = document.getElementById(`zoneTransitionUpload_${hotspot._id}`);
+            // Dive In upload
+            const diveInUploadArea = document.getElementById(`zoneTransitionUploadArea_${hotspot._id}`);
+            const diveInInput = document.getElementById(`zoneTransitionUpload_${hotspot._id}`);
             
-            if (zoneUploadArea && zoneInput) {
+            if (diveInUploadArea && diveInInput) {
                 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                    zoneUploadArea.addEventListener(eventName, preventDefaults, false);
+                    diveInUploadArea.addEventListener(eventName, preventDefaults, false);
                 });
 
                 ['dragenter', 'dragover'].forEach(eventName => {
-                    zoneUploadArea.addEventListener(eventName, () => highlight(zoneUploadArea), false);
+                    diveInUploadArea.addEventListener(eventName, () => highlight(diveInUploadArea), false);
                 });
 
                 ['dragleave', 'drop'].forEach(eventName => {
-                    zoneUploadArea.addEventListener(eventName, () => unhighlight(zoneUploadArea), false);
+                    diveInUploadArea.addEventListener(eventName, () => unhighlight(diveInUploadArea), false);
                 });
 
-                zoneUploadArea.addEventListener('drop', (e) => handleDrop(e, { 
+                diveInUploadArea.addEventListener('drop', (e) => handleDrop(e, { 
                     type: 'zoneTransition', 
-                    hotspotId: hotspot._id 
+                    hotspotId: hotspot._id,
+                    progress: document.getElementById(`zoneTransitionUploadProgress_${hotspot._id}`),
+                    input: diveInInput
                 }), false);
                 
-                zoneInput.addEventListener('change', (e) => handleFiles(e.target.files, { 
+                diveInInput.addEventListener('change', (e) => handleFiles(e.target.files, { 
                     type: 'zoneTransition', 
-                    hotspotId: hotspot._id 
+                    hotspotId: hotspot._id,
+                    progress: document.getElementById(`zoneTransitionUploadProgress_${hotspot._id}`),
+                    input: diveInInput
+                }));
+            }
+
+            // Zoom Out upload
+            const zoomOutUploadArea = document.getElementById(`zoomOutUploadArea_${hotspot._id}`);
+            const zoomOutInput = document.getElementById(`zoomOutUpload_${hotspot._id}`);
+            
+            if (zoomOutUploadArea && zoomOutInput) {
+                ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                    zoomOutUploadArea.addEventListener(eventName, preventDefaults, false);
+                });
+
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    zoomOutUploadArea.addEventListener(eventName, () => highlight(zoomOutUploadArea), false);
+                });
+
+                ['dragleave', 'drop'].forEach(eventName => {
+                    zoomOutUploadArea.addEventListener(eventName, () => unhighlight(zoomOutUploadArea), false);
+                });
+
+                zoomOutUploadArea.addEventListener('drop', (e) => handleDrop(e, { 
+                    type: 'zoomOut', 
+                    hotspotId: hotspot._id,
+                    progress: document.getElementById(`zoomOutUploadProgress_${hotspot._id}`),
+                    input: zoomOutInput
+                }), false);
+                
+                zoomOutInput.addEventListener('change', (e) => handleFiles(e.target.files, { 
+                    type: 'zoomOut', 
+                    hotspotId: hotspot._id,
+                    progress: document.getElementById(`zoomOutUploadProgress_${hotspot._id}`),
+                    input: zoomOutInput
                 }));
             }
 
@@ -551,12 +765,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 floorUploadArea.addEventListener('drop', (e) => handleDrop(e, { 
                     type: 'floorLevel', 
-                    hotspotId: hotspot._id 
+                    hotspotId: hotspot._id,
+                    progress: document.getElementById(`floorLevelUploadProgress_${hotspot._id}`),
+                    input: floorInput
                 }), false);
                 
                 floorInput.addEventListener('change', (e) => handleFiles(e.target.files, { 
                     type: 'floorLevel', 
-                    hotspotId: hotspot._id 
+                    hotspotId: hotspot._id,
+                    progress: document.getElementById(`floorLevelUploadProgress_${hotspot._id}`),
+                    input: floorInput
                 }));
             }
         });
@@ -622,10 +840,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formData = new FormData();
             formData.append('asset', file);
             formData.append('houseId', assetHouseSelector.value);
-            formData.append('type', assetType.type);
             
-            if (assetType.type === 'zoneTransition' && assetType.hotspotId) {
+            // Handle different asset types
+            if (assetType.type === 'zoneTransition') {
+                formData.append('type', 'diveIn');
                 formData.append('hotspotId', assetType.hotspotId);
+            } else if (assetType.type === 'floorLevel') {
+                formData.append('type', 'floorLevel');
+                formData.append('hotspotId', assetType.hotspotId);
+            } else if (assetType.type === 'zoomOut') {
+                formData.append('type', 'zoomOut');
+                formData.append('hotspotId', assetType.hotspotId);
+            } else {
+                formData.append('type', assetType.type);
             }
 
             const xhr = new XMLHttpRequest();
@@ -642,6 +869,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     uploadToastElement.querySelector('.toast-body').textContent = 'Asset uploaded successfully!';
                     uploadToast.show();
                     loadAssets(assetHouseSelector.value);
+                    
+                    // If this was a hotspot-specific upload, update the playlist UI
+                    if (assetType.hotspotId) {
+                        loadPlaylists(assetHouseSelector.value).then(playlists => {
+                            updatePlaylistUI(playlists);
+                        });
+                    }
                 } else {
                     throw new Error('Upload failed');
                 }
@@ -1031,7 +1265,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             // First, get existing hotspots
-            const existingResponse = await fetch(`/api/hotspots?houseId=${currentHouse}`);
+            const existingResponse = await fetch(`/api/hotspots?houseId=${currentHouse}&_=${Date.now()}`);
             if (!existingResponse.ok) {
                 throw new Error('Failed to fetch existing hotspots');
             }
@@ -1060,6 +1294,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const result = await response.json();
             console.log('Save result:', JSON.stringify(result, null, 2));
+
+            // Initialize videos for the new hotspot
+            const newHotspot = result.hotspots[result.hotspots.length - 1];
+            if (newHotspot && newHotspot._id) {
+                await initializeHotspotVideos(newHotspot._id);
+            }
 
             // Reset form and points
             hotspotForm.reset();
@@ -1114,7 +1354,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load aerial video for the current house
     async function loadAerialVideo(houseId) {
         try {
-            const response = await fetch(`/api/assets?houseId=${houseId}&type=aerial`);
+            console.log('Loading aerial video for house:', houseId);
+            const response = await fetch(`/api/assets?houseId=${houseId}&type=aerial&_=${Date.now()}`);
             if (!response.ok) throw new Error('Failed to load aerial video');
             
             const data = await response.json();
@@ -1133,14 +1374,98 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Update preview video
             const previewVideo = document.getElementById('previewVideo');
             if (previewVideo) {
-                previewVideo.src = aerialVideo.url;
+                // Reset video element
+                previewVideo.pause();
+                previewVideo.removeAttribute('src');
                 previewVideo.load();
-                optimizeVideoPlayback(previewVideo);
+
+                // Set video properties
+                previewVideo.src = aerialVideo.url;
+                previewVideo.loop = true;
+                previewVideo.autoplay = true;
+                previewVideo.muted = true;
+                previewVideo.playsInline = true;
+                previewVideo.preload = 'auto';
+
+                // Add event listeners for video loading
+                previewVideo.addEventListener('loadstart', () => {
+                    console.log('Video load started');
+                });
+
+                previewVideo.addEventListener('loadedmetadata', () => {
+                    console.log('Aerial video metadata loaded:', {
+                        width: previewVideo.videoWidth,
+                        height: previewVideo.videoHeight,
+                        duration: previewVideo.duration,
+                        readyState: previewVideo.readyState,
+                        networkState: previewVideo.networkState,
+                        error: previewVideo.error ? {
+                            code: previewVideo.error.code,
+                            message: previewVideo.error.message
+                        } : null
+                    });
+                    updatePreview(); // Re-render with correct dimensions
+                });
+
+                previewVideo.addEventListener('loadeddata', () => {
+                    console.log('Video data loaded, readyState:', previewVideo.readyState);
+                });
+
+                previewVideo.addEventListener('canplay', () => {
+                    console.log('Video can play, attempting playback');
+                    previewVideo.play().catch(error => {
+                        console.error('Error during play() call:', error);
+                    });
+                });
+
+                previewVideo.addEventListener('playing', () => {
+                    console.log('Video is now playing');
+                });
+
+                previewVideo.addEventListener('error', (e) => {
+                    console.error('Error loading aerial video:', {
+                        error: e,
+                        videoError: previewVideo.error ? {
+                            code: previewVideo.error.code,
+                            message: previewVideo.error.message
+                        } : null,
+                        readyState: previewVideo.readyState,
+                        networkState: previewVideo.networkState,
+                        src: previewVideo.src
+                    });
+
+                    // Show error in UI
+                    const previewContainer = document.querySelector('.preview-container');
+                    if (previewContainer) {
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'alert alert-danger m-3';
+                        errorDiv.textContent = 'Error loading aerial video. Please try refreshing the page.';
+                        previewContainer.appendChild(errorDiv);
+                    }
+                });
+
+                // Load the video
+                try {
+                    console.log('Calling load() on video element');
+                    await previewVideo.load();
+                    console.log('Video load() completed');
+                } catch (error) {
+                    console.error('Error during video load process:', error);
+                    throw error;
+                }
             }
 
             console.log('Aerial video loaded successfully');
         } catch (error) {
             console.error('Error loading aerial video:', error);
+            // Show error in UI
+            const previewContainer = document.querySelector('.preview-container');
+            if (previewContainer) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'alert alert-danger m-3';
+                errorDiv.textContent = 'Error loading aerial video. Please try refreshing the page.';
+                previewContainer.appendChild(errorDiv);
+            }
         }
     }
 
@@ -1363,7 +1688,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error('Hotspot not found');
             }
 
-            const response = await fetch(`/api/hotspots/${hotspotId}`, {
+            // Delete from server
+            const response = await fetch(`/api/hotspots/${hotspotId}?_=${Date.now()}`, {
                 method: 'DELETE'
             });
 
@@ -1379,9 +1705,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             updatePreview();
 
             // Show success message
-            const toast = new bootstrap.Toast(document.getElementById('notificationToast'));
-            document.getElementById('notificationToast').querySelector('.toast-body').textContent = 'Hotspot deleted successfully';
-            toast.show();
+            const toastElement = document.getElementById('notificationToast');
+            if (toastElement) {
+                const toast = new bootstrap.Toast(toastElement);
+                toastElement.querySelector('.toast-body').textContent = 'Hotspot deleted successfully';
+                toast.show();
+            }
+
+            // If we're in the playlists section, reload playlists
+            const playlistsSection = document.getElementById('playlistsSection');
+            if (playlistsSection && playlistsSection.style.display !== 'none') {
+                const playlists = await loadPlaylists(currentHouse);
+                updatePlaylistUI(playlists);
+            }
         } catch (error) {
             console.error('Error deleting hotspot:', error);
             alert('Error deleting hotspot: ' + error.message);
@@ -1532,28 +1868,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     function updatePlaylistUI(playlists) {
         console.log('Updating playlist UI with playlists:', playlists);
         
-        // Update global aerial video only
-        const globalAerialSelect = document.getElementById('globalAerialSelect');
-        
-        if (globalAerialSelect) {
-            // Clear existing options
-            globalAerialSelect.innerHTML = '<option value="">Select Video</option>';
-            
-            // Add aerial video options
-            const aerialAssets = assets.filter(asset => asset.type === 'aerial');
-            console.log('Aerial assets:', aerialAssets);
-            
-            aerialAssets.forEach(asset => {
-                const option = document.createElement('option');
-                option.value = asset._id;
-                option.textContent = asset.name || 'Unnamed Asset';
-                if (playlists.global?.aerial?.videoId === asset._id) {
-                    option.selected = true;
-                }
-                globalAerialSelect.appendChild(option);
-            });
-        }
-
         // Update hotspot playlists
         const hotspotPlaylistsContainer = document.getElementById('hotspotPlaylistsContainer');
         if (!hotspotPlaylistsContainer) {
@@ -1567,19 +1881,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Create playlist UI for each primary hotspot
         hotspotPlaylistsContainer.innerHTML = primaryHotspots.map(hotspot => {
-            const hotspotPlaylists = playlists[hotspot._id] || {};
+            const hotspotPlaylists = playlists.hotspots[hotspot._id] || {};
             console.log(`Creating playlist UI for hotspot ${hotspot._id}:`, hotspotPlaylists);
             
             // Get available videos for each type
             const diveInVideos = assets.filter(asset => asset.type === 'diveIn');
             const floorLevelVideos = assets.filter(asset => asset.type === 'floorLevel');
             const zoomOutVideos = assets.filter(asset => asset.type === 'zoomOut');
-            
-            console.log('Available videos:', {
-                diveIn: diveInVideos,
-                floorLevel: floorLevelVideos,
-                zoomOut: zoomOutVideos
-            });
             
             return `
                 <div class="card bg-dark mb-3">
@@ -1633,47 +1941,44 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (diveInSelect) {
                 diveInSelect.addEventListener('change', () => {
-                    updatePlaylist(hotspot._id, 'diveIn', diveInSelect.value);
+                    updateHotspotPlaylist(hotspot._id, 'diveIn', diveInSelect.value);
                 });
             }
 
             if (floorLevelSelect) {
                 floorLevelSelect.addEventListener('change', () => {
-                    updatePlaylist(hotspot._id, 'floorLevel', floorLevelSelect.value);
+                    updateHotspotPlaylist(hotspot._id, 'floorLevel', floorLevelSelect.value);
                 });
             }
 
             if (zoomOutSelect) {
                 zoomOutSelect.addEventListener('change', () => {
-                    updatePlaylist(hotspot._id, 'zoomOut', zoomOutSelect.value);
+                    updateHotspotPlaylist(hotspot._id, 'zoomOut', zoomOutSelect.value);
                 });
             }
         });
-
-        // Add event listener for global aerial video change
-        if (globalAerialSelect) {
-            globalAerialSelect.addEventListener('change', () => {
-                updateGlobalPlaylist('aerial', globalAerialSelect.value);
-            });
-        }
     }
 
-    // Update playlist
-    async function updatePlaylist(hotspotId, type, videoId) {
+    // Update hotspot playlist
+    async function updateHotspotPlaylist(hotspotId, type, videoId) {
         try {
             const playlists = await loadPlaylists(currentHouse);
             console.log('Current playlists:', playlists);
             
-            // Initialize playlist structure if it doesn't exist
-            if (!playlists[hotspotId]) {
-                playlists[hotspotId] = {
+            // Initialize hotspot playlists if they don't exist
+            if (!playlists.hotspots) {
+                playlists.hotspots = {};
+            }
+            if (!playlists.hotspots[hotspotId]) {
+                playlists.hotspots[hotspotId] = {
                     diveIn: { videoId: null },
-                    floorLevel: { videoId: null }
+                    floorLevel: { videoId: null },
+                    zoomOut: { videoId: null }
                 };
             }
 
             // Update the specific playlist
-            playlists[hotspotId][type] = { videoId };
+            playlists.hotspots[hotspotId][type] = { videoId };
 
             // Save updated playlists
             await savePlaylists(currentHouse, playlists);
@@ -1685,76 +1990,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (error) {
             console.error('Error updating playlist:', error);
             alert('Failed to update playlist. Please try again.');
-        }
-    }
-
-    // Update global playlist
-    async function updateGlobalPlaylist(type, videoId) {
-        try {
-            const playlists = await loadPlaylists(currentHouse);
-            
-            // Initialize global playlist if it doesn't exist
-            if (!playlists.global) {
-                playlists.global = {
-                    aerial: { videoId: null },
-                    zoomOut: { videoId: null }
-                };
-            }
-
-            // Update the specific global playlist
-            playlists.global[type] = { videoId };
-
-            // Save updated playlists
-            await savePlaylists(currentHouse, playlists);
-            
-            // Update UI
-            updatePlaylistUI(playlists);
-
-            console.log(`Updated global ${type} playlist`);
-        } catch (error) {
-            console.error('Error updating global playlist:', error);
-            alert('Failed to update global playlist. Please try again.');
-        }
-    }
-
-    // Save hotspots
-    async function saveHotspots() {
-        try {
-            // Filter hotspots for current house
-            const currentHotspots = window.hotspots.filter(h => h.houseId === currentHouse);
-            
-            console.log('Saving hotspots:', currentHotspots);
-            
-            const response = await fetch('/api/hotspots', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    houseId: currentHouse,
-                    hotspots: currentHotspots
-                })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText || 'Failed to save hotspots');
-            }
-
-            const result = await response.json();
-            console.log('Save hotspots result:', result);
-            
-            // Update local hotspots array with server response
-            if (result.hotspots) {
-                window.hotspots = result.hotspots;
-                updateHotspotList();
-                updatePreview();
-            }
-
-            return result;
-        } catch (error) {
-            console.error('Error saving hotspots:', error);
-            throw error;
         }
     }
 
@@ -1774,7 +2009,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         try {
-            const response = await fetch(`/api/assets/${assetId}`, {
+            const response = await fetch(`/api/assets/${assetId}?_=${Date.now()}`, {
                 method: 'DELETE'
             });
 
@@ -1783,8 +2018,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             // Remove the asset from the table
-            const row = document.querySelector(`button[data-asset-id="${assetId}"]`).closest('tr');
-            row.remove();
+            const row = document.querySelector(`button[data-asset-id="${assetId}"]`)?.closest('tr');
+            if (row) {
+                row.remove();
+            } else {
+                console.warn("Asset row not found in DOM (assetId: " + assetId + ") – skipping UI removal.");
+            }
 
             // Show success message
             const toast = new bootstrap.Toast(document.getElementById('notificationToast'));
@@ -1825,7 +2064,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            formData.append('assetFile', fileInput.files[0]);
+            formData.append('asset', fileInput.files[0]);
             formData.append('type', typeInput.value);
             formData.append('houseId', assetHouseSelector.value);
 
@@ -1855,9 +2094,440 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await loadAssets(assetHouseSelector.value);
             } catch (error) {
                 console.error('Error uploading asset:', error);
-                uploadToastElement.querySelector('.toast-body').textContent = 'Failed to upload asset: ' + error.message;
+                uploadToastElement.querySelector('.toast-body').textContent = 'Failed to upload asset. Please try again.';
                 uploadToast.show();
             }
         });
     }
+
+    // Edit asset
+    window.editAsset = function(assetId, currentType) {
+        const modal = new bootstrap.Modal(document.getElementById('editAssetModal'));
+        document.getElementById('editAssetId').value = assetId;
+        document.getElementById('editAssetType').value = currentType;
+        modal.show();
+    };
+
+    // Add event listener for save edit asset button
+    const saveEditAssetBtn = document.getElementById('saveEditAssetBtn');
+    if (saveEditAssetBtn) {
+        saveEditAssetBtn.addEventListener('click', async () => {
+            const assetId = document.getElementById('editAssetId').value;
+            const newType = document.getElementById('editAssetType').value;
+
+            try {
+                const response = await fetch(`/api/assets/${assetId}?_=${Date.now()}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ type: newType })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update asset');
+                }
+
+                // Close modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editAssetModal'));
+                modal.hide();
+
+                // Show success message
+                uploadToastElement.querySelector('.toast-body').textContent = 'Asset updated successfully!';
+                uploadToast.show();
+
+                // Reload assets
+                await loadAssets(assetHouseSelector.value);
+            } catch (error) {
+                console.error('Error updating asset:', error);
+                uploadToastElement.querySelector('.toast-body').textContent = 'Failed to update asset. Please try again.';
+                uploadToast.show();
+            }
+        });
+    }
+
+    function showUploadAssetModal() {
+        const modal = document.getElementById('uploadAssetModal');
+        const modalInstance = new bootstrap.Modal(modal);
+        
+        // Store the last focused element before opening modal
+        const lastFocusedElement = document.activeElement;
+        
+        // Remove aria-hidden before showing modal
+        modal.removeAttribute('aria-hidden');
+        
+        // Show modal
+        modalInstance.show();
+        
+        // Focus the first focusable element in the modal
+        const firstFocusable = modal.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (firstFocusable) {
+            firstFocusable.focus();
+        }
+        
+        // Store the last focused element for when modal closes
+        modal.dataset.lastFocusedElement = lastFocusedElement;
+    }
+
+    function hideUploadAssetModal() {
+        const modal = document.getElementById('uploadAssetModal');
+        const modalInstance = bootstrap.Modal.getInstance(modal);
+        
+        // Set aria-hidden before hiding modal
+        modal.setAttribute('aria-hidden', 'true');
+        
+        // Hide modal
+        modalInstance.hide();
+        
+        // Restore focus to the last focused element
+        const lastFocusedElement = modal.dataset.lastFocusedElement;
+        if (lastFocusedElement) {
+            lastFocusedElement.focus();
+        }
+    }
+
+    // Update event listeners for modal
+    document.addEventListener('DOMContentLoaded', function() {
+        const uploadAssetModal = document.getElementById('uploadAssetModal');
+        
+        // Handle modal show event
+        uploadAssetModal.addEventListener('show.bs.modal', function() {
+            // Remove aria-hidden when modal is about to show
+            this.removeAttribute('aria-hidden');
+        });
+        
+        // Handle modal hidden event
+        uploadAssetModal.addEventListener('hidden.bs.modal', function() {
+            // Set aria-hidden when modal is hidden
+            this.setAttribute('aria-hidden', 'true');
+            
+            // Restore focus
+            const lastFocusedElement = this.dataset.lastFocusedElement;
+            if (lastFocusedElement) {
+                lastFocusedElement.focus();
+            }
+        });
+        
+        // Handle escape key
+        uploadAssetModal.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                hideUploadAssetModal();
+            }
+        });
+    });
+
+    // Update the save asset button click handler
+    document.getElementById('saveAssetBtn').addEventListener('click', async function() {
+        // ... existing save asset code ...
+        
+        // After successful save, properly hide the modal
+        hideUploadAssetModal();
+    });
+
+    // Update hotspot videos UI
+    function updateHotspotVideosUI(hotspotVideos) {
+        const container = document.getElementById('hotspotPlaylistsContainer');
+        if (!container) return;
+
+        // Get primary hotspots for current house
+        const primaryHotspots = window.hotspots.filter(h => 
+            h.houseId === currentHouse && h.type === 'primary'
+        );
+
+        // Get available videos for hotspot section
+        const diveInVideos = assets.filter(asset => asset.type === 'diveIn');
+        const floorLevelVideos = assets.filter(asset => asset.type === 'floorLevel');
+        const zoomOutVideos = assets.filter(asset => asset.type === 'zoomOut');
+
+        container.innerHTML = primaryHotspots.map(hotspot => {
+            const hotspotVideo = hotspotVideos.find(v => v.hotspotId === hotspot._id) || {};
+            
+            return `
+                <div class="card bg-dark mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">${hotspot.title}</h5>
+                        <div class="mb-3">
+                            <label class="form-label">Dive In Video</label>
+                            <select class="form-select" id="diveInSelect_${hotspot._id}">
+                                <option value="">Select Video</option>
+                                ${diveInVideos.map(asset => `
+                                    <option value="${asset._id}" 
+                                        ${hotspotVideo.diveIn?.videoId === asset._id ? 'selected' : ''}>
+                                        ${asset.name || 'Unnamed Asset'}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Floor Level Video</label>
+                            <select class="form-select" id="floorLevelSelect_${hotspot._id}">
+                                <option value="">Select Video</option>
+                                ${floorLevelVideos.map(asset => `
+                                    <option value="${asset._id}"
+                                    ${hotspotVideo.floorLevel?.videoId === asset._id ? 'selected' : ''}>
+                                    ${asset.name || 'Unnamed Asset'}
+                                </option>
+                            `).join('')}
+                        </select>
+                    </div>
+                        <div class="mb-3">
+                            <label class="form-label">Zoom Out Video</label>
+                            <select class="form-select" id="zoomOutSelect_${hotspot._id}">
+                                <option value="">Select Video</option>
+                                ${zoomOutVideos.map(asset => `
+                                    <option value="${asset._id}"
+                                        ${hotspotVideo.zoomOut?.videoId === asset._id ? 'selected' : ''}>
+                                        ${asset.name || 'Unnamed Asset'}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Add event listeners for hotspot video changes
+        primaryHotspots.forEach(hotspot => {
+            const diveInSelect = document.getElementById(`diveInSelect_${hotspot._id}`);
+            const floorLevelSelect = document.getElementById(`floorLevelSelect_${hotspot._id}`);
+            const zoomOutSelect = document.getElementById(`zoomOutSelect_${hotspot._id}`);
+
+            const updateHotspotVideos = async (field, value) => {
+                try {
+                    const currentVideos = {
+                        diveIn: { videoId: diveInSelect?.value || '' },
+                        floorLevel: { videoId: floorLevelSelect?.value || '' },
+                        zoomOut: { videoId: zoomOutSelect?.value || '' }
+                    };
+                    currentVideos[field] = { videoId: value };
+
+                    const response = await fetch('/api/hotspot-videos', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            houseId: currentHouse,
+                            hotspotId: hotspot._id,
+                            videos: currentVideos
+                        })
+                    });
+                    if (!response.ok) throw new Error('Failed to update hotspot videos');
+                    showNotification('Hotspot videos updated successfully');
+                } catch (error) {
+                    console.error('Error updating hotspot videos:', error);
+                    showNotification('Error updating hotspot videos', 'error');
+                }
+            };
+
+            if (diveInSelect) {
+                diveInSelect.addEventListener('change', () => updateHotspotVideos('diveIn', diveInSelect.value));
+            }
+
+            if (floorLevelSelect) {
+                floorLevelSelect.addEventListener('change', () => updateHotspotVideos('floorLevel', floorLevelSelect.value));
+            }
+
+            if (zoomOutSelect) {
+                zoomOutSelect.addEventListener('change', () => updateHotspotVideos('zoomOut', zoomOutSelect.value));
+            }
+        });
+    }
+
+    // Save hotspots
+    async function saveHotspots() {
+        try {
+            // Get current hotspots for the house
+            const currentHotspots = window.hotspots.filter(h => h.houseId === currentHouse);
+            
+            // Save to server
+            const response = await fetch('/api/hotspots', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    houseId: currentHouse,
+                    hotspots: currentHotspots
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to save hotspots');
+            }
+
+            const result = await response.json();
+            console.log('Saved hotspots:', result);
+            return result;
+        } catch (error) {
+            console.error('Error saving hotspots:', error);
+            throw error;
+        }
+    }
+
+    // Initialize hotspot videos
+    async function initializeHotspotVideos(hotspotId) {
+        try {
+            // Create initial video structure
+            const initialVideos = {
+                diveIn: { videoId: null },
+                floorLevel: { videoId: null },
+                zoomOut: { videoId: null }
+            };
+
+            // Save to server
+            const response = await fetch('/api/hotspot-videos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    houseId: currentHouse,
+                    hotspotId: hotspotId,
+                    videos: initialVideos
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to initialize hotspot videos');
+            }
+
+            console.log('Initialized videos for hotspot:', hotspotId);
+            return await response.json();
+        } catch (error) {
+            console.error('Error initializing hotspot videos:', error);
+            throw error;
+        }
+    }
+
+    // Modify the house selection handler
+    function handleHouseSelection(houseId) {
+        currentHouseId = houseId;
+        
+        // Update UI to show selected house
+        document.querySelectorAll('.house-selector button').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.houseId === houseId.toString());
+        });
+
+        // Load house-specific data
+        loadHotspots(houseId);
+        loadHouseVideos(houseId);
+        
+        // Load global videos (without house context)
+        loadGlobalVideos();
+    }
+
+    // Modify loadGlobalVideos to not depend on house selection
+    async function loadGlobalVideos() {
+        try {
+            const response = await fetch(`/api/global-videos?_=${Date.now()}`);
+            if (!response.ok) throw new Error('Failed to load global videos');
+            
+            const { globalVideos } = await response.json();
+            console.log('Loaded global videos:', globalVideos);
+
+            // Update UI for each global video type
+            Object.entries(globalVideos).forEach(([type, video]) => {
+                const container = document.getElementById(`${type}-video-container`);
+                if (!container) return;
+
+                const select = container.querySelector('select');
+                const preview = container.querySelector('.video-preview');
+                const nameDisplay = container.querySelector('.selected-video-name');
+                
+                if (select && video?.videoId) {
+                    // Set the selected video
+                    select.value = video.videoId;
+                    
+                    // Update preview and name
+                    if (preview) {
+                        preview.src = `/api/assets/video/${video.videoId}`;
+                        preview.style.display = 'block';
+                    }
+                    if (nameDisplay) {
+                        nameDisplay.textContent = video.name || 'Selected Video';
+                        nameDisplay.style.display = 'block';
+                    }
+                } else {
+                    // Reset if no video selected
+                    if (select) select.value = '';
+                    if (preview) {
+                        preview.src = '';
+                        preview.style.display = 'none';
+                    }
+                    if (nameDisplay) {
+                        nameDisplay.textContent = '';
+                        nameDisplay.style.display = 'none';
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error loading global videos:', error);
+            showError('Failed to load global videos');
+        }
+    }
+
+    // Add showError function at the top with other utility functions
+    function showError(message) {
+        const notification = document.createElement('div');
+        notification.className = 'alert alert-danger';
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            padding: 15px 20px;
+            border-radius: 4px;
+            background-color: #dc3545;
+            color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            animation: slideIn 0.3s ease-out;
+        `;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+        
+        // Remove after 5 seconds
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease-in';
+            setTimeout(() => notification.remove(), 300);
+        }, 5000);
+    }
+
+    // Add showSuccess function for consistency
+    function showSuccess(message) {
+        const notification = document.createElement('div');
+        notification.className = 'alert alert-success';
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            padding: 15px 20px;
+            border-radius: 4px;
+            background-color: #28a745;
+            color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            animation: slideIn 0.3s ease-out;
+        `;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+        
+        // Remove after 5 seconds
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease-in';
+            setTimeout(() => notification.remove(), 300);
+        }, 5000);
+    }
+
+    // Add CSS for animations
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+    `;
+    document.head.appendChild(style);
 }); 

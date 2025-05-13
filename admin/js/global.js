@@ -14,7 +14,7 @@ window.deleteHotspot = async function(hotspotId) {
             throw new Error('Hotspot not found');
         }
 
-        const response = await fetch(`/api/hotspots/${hotspotId}`, {
+        const response = await fetch(`/api/hotspots/${hotspotId}?_=${Date.now()}`, {
             method: 'DELETE'
         });
 

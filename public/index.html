@@ -142,6 +142,13 @@
             z-index: 100;
             display: inline-block;
             min-width: fit-content;
+            max-width: 300px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.4;
+            height: auto;
+            background: none;
         }
         
         .hotspot {
@@ -309,59 +316,67 @@
     </style>
 </head>
 <body>
-    <div id="container">
-        <div class="house-selector">
-            <select id="houseSelector">
-                <option value="1">King of Prussia</option>
-                <option value="2">Dallas</option>
-            </select>
+    <div id="app">
+        <!-- Add logo container before other elements -->
+        <div id="logoContainer" class="logo-container">
+            <img src="/images/NH_temp_Logo.png" alt="Netflix House Logo" class="logo">
         </div>
-
-        <!-- Aerial View -->
-        <div id="aerialView" class="view">
-            <div class="video-container">
-                <div class="video-placeholder">
-                    <video id="aerialVideo" class="aerial-video" playsinline autoplay loop muted>
-                        <source src="" type="video/mp4">
-                        Your browser does not support the video tag.
-                    </video>
+        
+        <div id="container">
+            <div id="houseSelector" class="house-selector">
+                <div class="house-buttons">
+                    <button id="house1Btn" class="house-btn active" data-house-id="1">King of Prussia</button>
+                    <button id="house2Btn" class="house-btn" data-house-id="2">Dallas</button>
                 </div>
             </div>
-            <div id="hotspotContainer" class="hotspot-container"></div>
-            <div class="info-panel">
-                <h3>HOW TO USE</h3>
-                <p>To explore the House - tap any room on map</p>
-            </div>
-        </div>
 
-        <!-- Transition View -->
-        <div id="transitionView" class="view">
-            <div class="video-container">
-                <div class="video-placeholder">
-                    <video id="transitionVideo" class="preview-video" muted playsinline preload="auto">
-                        <source src="" type="video/mp4">
-                    </video>
+            <!-- Aerial View -->
+            <div id="aerialView" class="view">
+                <div class="video-container">
+                    <div class="video-placeholder">
+                        <video id="aerialVideo" class="aerial-video" playsinline autoplay loop muted>
+                            <source src="" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
+                    </div>
+                </div>
+                <div id="hotspotContainer" class="hotspot-container"></div>
+                <div class="info-panel">
+                    <h3>HOW TO USE</h3>
+                    <p>To explore the House - tap any room on map</p>
                 </div>
             </div>
-        </div>
 
-        <!-- Floor Level View -->
-        <div id="floorLevelView" class="view">
-            <div class="video-container">
-                <div class="video-placeholder">
-                    <video id="floorLevelVideo" class="preview-video" muted playsinline preload="auto">
-                        <source src="" type="video/mp4">
-                    </video>
+            <!-- Transition View -->
+            <div id="transitionView" class="view">
+                <div class="video-container">
+                    <div class="video-placeholder">
+                        <video id="transitionVideo" class="preview-video" muted playsinline preload="auto">
+                            <source src="" type="video/mp4">
+                        </video>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <button class="back-button" style="display: none;">Back to Aerial View</button>
-        <div id="stateIndicator" class="state-indicator">Current State: Aerial View</div>
+            <!-- Floor Level View -->
+            <div id="floorLevelView" class="view">
+                <div class="video-container">
+                    <div class="video-placeholder">
+                        <video id="floorLevelVideo" class="preview-video" muted playsinline preload="auto">
+                            <source src="" type="video/mp4">
+                        </video>
+                    </div>
+                </div>
+            </div>
+
+            <button class="back-button" style="display: none;">Back to Aerial View</button>
+            <div id="stateIndicator" class="state-indicator">Current State: Aerial View</div>
+        </div>
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/hotspots.js"></script>
+    <script src="/js/main.js"></script>
     <script>
         // Initialize HotspotManager
         const hotspotManager = new HotspotManager();

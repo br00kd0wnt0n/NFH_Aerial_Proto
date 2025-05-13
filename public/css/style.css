@@ -114,24 +114,34 @@ body {
     bottom: 20px;
     left: 20px;
     z-index: 1000;
-    width: 200px;
+    width: auto;
     display: block;
 }
 
-.house-selector select {
-    width: 100%;
+.house-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.house-btn {
     background-color: rgba(0, 0, 0, 0.8);
     color: white;
     border: 2px solid #e50914;
     border-radius: 5px;
-    padding: 8px;
+    padding: 8px 16px;
     font-size: 16px;
     cursor: pointer;
     transition: all 0.3s ease;
+    min-width: 120px;
 }
 
-.house-selector select:hover {
-    background-color: rgba(229, 9, 20, 0.2) !important;
+.house-btn:hover {
+    background-color: rgba(229, 9, 20, 0.2);
+}
+
+.house-btn.active {
+    background-color: #e50914;
+    color: white;
 }
 
 /* Status Panels */
@@ -159,7 +169,14 @@ body {
     z-index: 100;
     pointer-events: none;
     background: none;
-    display: block;
+    display: inline-block;
+    min-width: fit-content;
+    max-width: 300px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.4;
+    height: auto;
 }
 
 .playback-clock {
@@ -359,4 +376,28 @@ body {
 #transitionView .house-selector,
 #floorLevelView .house-selector {
     display: none !important;
+}
+
+/* Logo styles */
+.logo-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 2000;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.logo {
+    width: 120px;
+    height: auto;
+    opacity: 0.8;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+/* Ensure logo is visible over all views */
+#aerialView .logo-container,
+#transitionView .logo-container,
+#floorLevelView .logo-container {
+    display: block;
 } 

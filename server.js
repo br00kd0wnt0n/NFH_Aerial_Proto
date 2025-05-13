@@ -8,6 +8,9 @@ const multer = require('multer');
 const assetRoutes = require('./routes/assets');
 const hotspotRoutes = require('./routes/hotspots');
 
+// Import models - use existing models from routes
+const Asset = mongoose.models.Asset || require('./models/asset');
+
 const app = express();
 const upload = multer();
 
@@ -52,7 +55,7 @@ app.use('/admin', express.static(path.join(__dirname, 'admin'), {
         }
     }
 }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static('public'));
 
 // Environment variables
 const PORT = process.env.PORT || 3000;
@@ -127,61 +130,256 @@ mongoose.connection.on('reconnected', () => {
     console.log('MongoDB reconnected');
 });
 
-// Routes
-app.use('/api/assets', assetRoutes);
-app.use('/api/hotspots', hotspotRoutes);
-
-// Playlist Schema
-const playlistSchema = new mongoose.Schema({
-    houseId: { type: Number, required: true },
-    playlists: { type: Map, of: Object, default: new Map() }
+// House Video Schema - for house-specific videos
+const houseVideoSchema = new mongoose.Schema({
+    houseId: { type: Number, required: true, unique: true },
+    aerial: { videoId: String },  // House's aerial video
+    transitions: {
+        toHouse1: { videoId: String },  // Transition video when switching to House 1
+        toHouse2: { videoId: String }   // Transition video when switching to House 2
+    }
 });
 
-const Playlist = mongoose.model('Playlist', playlistSchema);
+// Hotspot Video Schema - for hotspot-specific videos
+const hotspotVideoSchema = new mongoose.Schema({
+    houseId: { type: Number, required: true },
+    hotspotId: { type: String, required: true },
+    diveIn: { videoId: String },
+    floorLevel: { videoId: String },
+    zoomOut: { videoId: String }
+});
 
-// Get playlists for a house
-app.get('/api/playlists', async (req, res) => {
+// Create compound index for hotspot videos
+hotspotVideoSchema.index({ houseId: 1, hotspotId: 1 }, { unique: true });
+
+const HouseVideo = mongoose.model('HouseVideo', houseVideoSchema);
+const HotspotVideo = mongoose.model('HotspotVideo', hotspotVideoSchema);
+
+// Global Videos Schema
+const globalVideosSchema = new mongoose.Schema({
+    kopAerial: { videoId: String },
+    dallasAerial: { videoId: String },
+    kopToDallas: { videoId: String },
+    dallasToKop: { videoId: String }
+}, { _id: false });
+
+const GlobalVideos = mongoose.model('GlobalVideos', globalVideosSchema);
+
+// Initialize global videos if they don't exist
+async function initializeGlobalVideos() {
     try {
-        const { houseId } = req.query;
+        const count = await GlobalVideos.countDocuments();
+        if (count === 0) {
+            await GlobalVideos.create({});
+            console.log('Initialized global videos document');
+        }
+    } catch (error) {
+        console.error('Error initializing global videos:', error);
+    }
+}
+
+// Call initialization
+initializeGlobalVideos();
+
+// Routes
+// Get house videos
+app.get('/api/house-videos', async (req, res) => {
+    try {
+        const houseId = parseInt(req.query.houseId);
         if (!houseId) {
             return res.status(400).json({ error: 'House ID is required' });
         }
 
-        let playlist = await Playlist.findOne({ houseId: parseInt(houseId) });
-        if (!playlist) {
-            playlist = new Playlist({ houseId: parseInt(houseId) });
-            await playlist.save();
+        let houseVideo = await HouseVideo.findOne({ houseId });
+        if (!houseVideo) {
+            // Initialize with empty structure
+            houseVideo = new HouseVideo({
+                houseId,
+                aerial: { videoId: null },
+                transitions: {
+                    toHouse1: { videoId: null },
+                    toHouse2: { videoId: null }
+                }
+            });
+            await houseVideo.save();
         }
 
-        res.json({ playlists: playlist.playlists });
+        res.json({ houseVideo });
     } catch (error) {
-        console.error('Error fetching playlists:', error);
-        res.status(500).json({ error: 'Failed to fetch playlists' });
+        console.error('Error fetching house videos:', error);
+        res.status(500).json({ error: 'Failed to fetch house videos' });
     }
 });
 
-// Save playlists for a house
-app.post('/api/playlists', async (req, res) => {
+// Update house videos
+app.post('/api/house-videos', async (req, res) => {
     try {
-        const { houseId, playlists } = req.body;
-        if (!houseId || !playlists) {
-            return res.status(400).json({ error: 'House ID and playlists are required' });
+        const { houseId, houseVideo } = req.body;
+        if (!houseId) {
+            return res.status(400).json({ error: 'House ID is required' });
         }
 
-        let playlist = await Playlist.findOne({ houseId: parseInt(houseId) });
-        if (!playlist) {
-            playlist = new Playlist({ houseId: parseInt(houseId) });
+        let existingVideo = await HouseVideo.findOne({ houseId: parseInt(houseId) });
+        if (existingVideo) {
+            existingVideo.set(houseVideo);
+            await existingVideo.save();
+        } else {
+            existingVideo = new HouseVideo({ houseId: parseInt(houseId), ...houseVideo });
+            await existingVideo.save();
         }
 
-        playlist.playlists = playlists;
-        await playlist.save();
-
-        res.json({ message: 'Playlists saved successfully' });
+        res.json({ houseVideo: existingVideo });
     } catch (error) {
-        console.error('Error saving playlists:', error);
-        res.status(500).json({ error: 'Failed to save playlists' });
+        console.error('Error updating house videos:', error);
+        res.status(500).json({ error: 'Failed to update house videos' });
     }
 });
+
+// Get hotspot videos
+app.get('/api/hotspot-videos', async (req, res) => {
+    try {
+        const { houseId, hotspotId } = req.query;
+        if (!houseId) {
+            console.error('GET /api/hotspot-videos: Missing houseId in request');
+            return res.status(400).json({ error: 'House ID is required' });
+        }
+
+        const query = { houseId: parseInt(houseId) };
+        if (hotspotId) {
+            query.hotspotId = hotspotId;
+        }
+        console.log("GET /api/hotspot-videos - Request query:", query);
+        console.log("GET /api/hotspot-videos - Request params:", req.query);
+        
+        // If hotspotId is provided, use findOne (return a single object) else use find (return an array)
+        let hotspotVideos = hotspotId ? await HotspotVideo.findOne(query) : await HotspotVideo.find(query);
+        console.log("GET /api/hotspot-videos - Database query result:", JSON.stringify(hotspotVideos, null, 2));
+        
+        if (hotspotId && !hotspotVideos) {
+            console.log("GET /api/hotspot-videos - No videos found for hotspot, creating default structure");
+            hotspotVideos = { diveIn: { videoId: null }, floorLevel: { videoId: null }, zoomOut: { videoId: null } };
+        }
+        
+        // If hotspotId is provided, wrap hotspotVideos in an object
+        if (hotspotId) {
+            hotspotVideos = { hotspotVideos };
+        }
+        console.log("GET /api/hotspot-videos - Final response:", JSON.stringify(hotspotVideos, null, 2));
+        res.json(hotspotId ? hotspotVideos : { hotspotVideos });
+    } catch (error) {
+        console.error('Error fetching hotspot videos:', error);
+        res.status(500).json({ error: 'Failed to fetch hotspot videos' });
+    }
+});
+
+// Update hotspot videos
+app.post('/api/hotspot-videos', async (req, res) => {
+    try {
+        const { houseId, hotspotId, videos } = req.body;
+        if (!houseId || !hotspotId) {
+            return res.status(400).json({ error: 'House ID and Hotspot ID are required' });
+        }
+
+        let existingVideos = await HotspotVideo.findOne({
+            houseId: parseInt(houseId),
+            hotspotId
+        });
+
+        if (existingVideos) {
+            existingVideos.set(videos);
+            await existingVideos.save();
+        } else {
+            existingVideos = new HotspotVideo({
+                houseId: parseInt(houseId),
+                hotspotId,
+                ...videos
+            });
+            await existingVideos.save();
+        }
+
+        res.json({ hotspotVideos: existingVideos });
+    } catch (error) {
+        console.error('Error updating hotspot videos:', error);
+        res.status(500).json({ error: 'Failed to update hotspot videos' });
+    }
+});
+
+// Get global videos
+app.get('/api/global-videos', async (req, res) => {
+    try {
+        // Get the single global video document
+        const globalVideo = await GlobalVideos.findOne();
+        
+        // If no document exists, return empty structure
+        if (!globalVideo) {
+            return res.json({
+                globalVideos: {
+                    welcome: null,
+                    exit: null,
+                    error: null
+                }
+            });
+        }
+
+        // Return the global videos
+        res.json({ globalVideos: globalVideo.globalVideos || {} });
+    } catch (error) {
+        console.error('Error fetching global videos:', error);
+        res.status(500).json({ error: 'Failed to fetch global videos' });
+    }
+});
+
+// Update global videos
+app.post('/api/global-videos', async (req, res) => {
+    try {
+        const { type, videoId } = req.body;
+        
+        if (!type || !videoId) {
+            console.error('Missing required fields:', { type, videoId });
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        console.log('Updating global video:', { type, videoId });
+
+        // Get the asset to verify it exists and get its name
+        const asset = await Asset.findById(videoId);
+        if (!asset) {
+            console.error('Video asset not found:', videoId);
+            return res.status(404).json({ error: 'Video asset not found' });
+        }
+
+        // Update or create the global video entry
+        const update = {
+            $set: {
+                [`globalVideos.${type}`]: {
+                    videoId,
+                    name: asset.name,
+                    url: asset.url,
+                    updatedAt: new Date()
+                }
+            }
+        };
+
+        console.log('Update operation:', update);
+
+        // Use upsert to create if doesn't exist
+        const result = await GlobalVideos.findOneAndUpdate(
+            {}, // No query - we want the single global video document
+            update,
+            { upsert: true, new: true }
+        );
+
+        console.log('Updated global video result:', result);
+        res.json(result);
+    } catch (error) {
+        console.error('Error updating global video:', error);
+        res.status(500).json({ error: 'Failed to update global video', details: error.message });
+    }
+});
+
+// Asset and hotspot routes
+app.use('/api/assets', assetRoutes);
+app.use('/api/hotspots', hotspotRoutes);
 
 // Get assets endpoint
 app.get('/api/assets', async (req, res) => {
@@ -236,6 +434,15 @@ app.get('/', (req, res) => {
     const indexPath = path.join(__dirname, 'public', 'index.html');
     console.log('Serving main page from:', indexPath);
     res.sendFile(indexPath);
+});
+
+// Disable caching for all API responses
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
+  next();
 });
 
 // Error handling middleware

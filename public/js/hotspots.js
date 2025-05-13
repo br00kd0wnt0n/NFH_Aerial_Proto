@@ -3,9 +3,12 @@ class HotspotManager {
         console.log('Initializing HotspotManager');
         this.hotspotContainer = document.querySelector('#hotspotContainer');
         console.log('Hotspot container:', this.hotspotContainer);
-        this.hotspots = [];
+        this.hotspots = new Map();
+        this.playbackClocks = new Map();
         this.currentHouse = 1;
         this.currentHotspot = null;
+        this.isLoading = false;
+        this.preloadedVideos = new Map(); // Store preloaded video elements
         
         // DOM Elements
         this.houseSelector = document.getElementById('houseSelector');
@@ -26,38 +29,94 @@ class HotspotManager {
             updateButton: this.updateButton
         });
         
-        // Initialize views
+        this.isPreloading = false;
+        this.preloadProgress = 0;
+        this.totalVideosToPreload = 0;
+        this.loadedVideos = 0;
+        
+        // Initialize views first
         this.initializeViews();
         
-        // Video Elements
+        // Initialize video elements synchronously
+        this.initializeVideoElements();
+        
+        // Initialize event listeners
+        this.initializeEventListeners();
+
+        // Start preloading videos and wait for completion
+        this.initializeAndPreload();
+    }
+    
+    initializeVideoElements() {
+        console.log('Initializing video elements');
+        
+        // Create video elements if they don't exist
+        if (!document.getElementById('aerialVideo')) {
+            const aerialVideo = document.createElement('video');
+            aerialVideo.id = 'aerialVideo';
+            aerialVideo.className = 'preview-video';
+            aerialVideo.muted = true;
+            aerialVideo.playsInline = true;
+            aerialVideo.autoplay = true;
+            aerialVideo.loop = true;
+            this.aerialView.querySelector('.video-container .video-placeholder').appendChild(aerialVideo);
+        }
+        
+        if (!document.getElementById('transitionVideo')) {
+            const transitionVideo = document.createElement('video');
+            transitionVideo.id = 'transitionVideo';
+            transitionVideo.className = 'preview-video';
+            transitionVideo.muted = true;
+            transitionVideo.playsInline = true;
+            transitionVideo.autoplay = true;
+            transitionVideo.loop = false;
+            this.transitionView.querySelector('.video-container .video-placeholder').appendChild(transitionVideo);
+        }
+        
+        if (!document.getElementById('floorLevelVideo')) {
+            const floorLevelVideo = document.createElement('video');
+            floorLevelVideo.id = 'floorLevelVideo';
+            floorLevelVideo.className = 'preview-video';
+            floorLevelVideo.muted = true;
+            floorLevelVideo.playsInline = true;
+            floorLevelVideo.autoplay = true;
+            floorLevelVideo.loop = false;
+            this.floorLevelView.querySelector('.video-container .video-placeholder').appendChild(floorLevelVideo);
+        }
+        
+        // Get references to video elements
         this.aerialVideo = document.getElementById('aerialVideo');
         this.transitionVideo = document.getElementById('transitionVideo');
         this.floorLevelVideo = document.getElementById('floorLevelVideo');
         
-        // Add playback clock elements
-        this.playbackClocks = new Map();
+        console.log('Video Elements:', {
+            aerialVideo: this.aerialVideo,
+            transitionVideo: this.transitionVideo,
+            floorLevelVideo: this.floorLevelVideo
+        });
         
-        // Initialize
-        this.initializeEventListeners();
-        this.loadHotspots();
-        this.loadAssets();
+        if (!this.aerialVideo || !this.transitionVideo || !this.floorLevelVideo) {
+            console.error('Failed to initialize video elements');
+            throw new Error('Failed to initialize video elements');
+        }
     }
     
     initializeViews() {
         // Set up aerial view
         this.aerialView.style.cssText = `
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
             background: black;
             z-index: 1;
+            display: block;
         `;
 
         // Set up transition view
         this.transitionView.style.cssText = `
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
@@ -69,7 +128,7 @@ class HotspotManager {
 
         // Set up floor level view
         this.floorLevelView.style.cssText = `
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
@@ -79,14 +138,8 @@ class HotspotManager {
             display: none;
         `;
 
-        // Create video containers
-        const createVideoContainer = (view) => {
-            // Remove any existing containers
-            const existingContainer = view.querySelector('.video-container');
-            if (existingContainer) {
-                existingContainer.remove();
-            }
-
+        // Create persistent video containers
+        const createVideoContainer = (view, videoElement) => {
             const container = document.createElement('div');
             container.className = 'video-container';
             container.style.cssText = `
@@ -112,16 +165,40 @@ class HotspotManager {
                 justify-content: center;
             `;
             container.appendChild(placeholder);
+
+            if (videoElement) {
+                videoElement.style.cssText = `
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                `;
+                placeholder.appendChild(videoElement);
+            }
         };
 
-        createVideoContainer(this.transitionView);
-        createVideoContainer(this.floorLevelView);
+        // Create containers while preserving video elements
+        createVideoContainer(this.transitionView, this.transitionVideo);
+        createVideoContainer(this.floorLevelView, this.floorLevelVideo);
 
-        // Ensure state indicator and asset label are always visible
+        // Ensure state indicator is always visible
         if (this.stateIndicator) {
-            this.stateIndicator.style.display = 'block';
-            this.stateIndicator.style.zIndex = '2000';
+            this.stateIndicator.style.cssText = `
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                padding: 5px 10px;
+                border-radius: 4px;
+                z-index: 9999;
+            `;
         }
+
+        console.log('Views initialized:', {
+            aerialView: this.aerialView.style.display,
+            transitionView: this.transitionView.style.display,
+            floorLevelView: this.floorLevelView.style.display
+        });
     }
     
     initializeEventListeners() {
@@ -146,9 +223,25 @@ class HotspotManager {
             this.floorLevelVideo.addEventListener('ended', () => this.handleVideoEnd());
         }
         
+        // Handle tab visibility changes
+        if (document) {
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    // Tab is hidden - pause videos and store current state
+                    this.storeVideoState();
+                } else {
+                    // Tab is visible - restore video state
+                    this.restoreVideoState();
+                }
+            });
+        }
+
         // Listen for reload events
         if (window) {
-            window.addEventListener('focus', () => this.checkForUpdates());
+            window.addEventListener('focus', () => {
+                this.checkForUpdates();
+                this.restoreVideoState();
+            });
         }
 
         // Add click handler for update button
@@ -159,9 +252,39 @@ class HotspotManager {
         }
     }
     
+    // Store current video state
+    storeVideoState() {
+        if (this.aerialVideo) {
+            this._storedVideoState = {
+                currentTime: this.aerialVideo.currentTime,
+                isPlaying: !this.aerialVideo.paused,
+                src: this.aerialVideo.src
+            };
+            // Pause the video when tab is hidden
+            this.aerialVideo.pause();
+        }
+    }
+
+    // Restore video state
+    async restoreVideoState() {
+        if (this._storedVideoState && this.aerialVideo) {
+            // Only restore if the video source hasn't changed
+            if (this.aerialVideo.src === this._storedVideoState.src) {
+                this.aerialVideo.currentTime = this._storedVideoState.currentTime;
+                if (this._storedVideoState.isPlaying) {
+                    try {
+                        await this.aerialVideo.play();
+                    } catch (error) {
+                        console.error('Error restoring video playback:', error);
+                    }
+                }
+            }
+        }
+    }
+    
     async checkForUpdates() {
         try {
-            const response = await fetch(`/api/hotspots?houseId=${this.currentHouse}&checkUpdate=true`);
+            const response = await fetch(`/api/hotspots?houseId=${this.currentHouse}&checkUpdate=true&_=${Date.now()}`);
             if (!response.ok) throw new Error('Failed to check for updates');
             
             const data = await response.json();
@@ -176,7 +299,7 @@ class HotspotManager {
     async reload() {
         try {
             // Clear existing data
-            this.hotspots = [];
+            this.hotspots.clear();
             this.hotspotAssets = [];
             
             // Reload hotspots and assets
@@ -198,7 +321,7 @@ class HotspotManager {
     async loadHotspots() {
         try {
             console.log('Loading hotspots for house:', this.currentHouse);
-            const response = await fetch(`/api/hotspots?houseId=${this.currentHouse}`);
+            const response = await fetch(`/api/hotspots?houseId=${this.currentHouse}&_=${Date.now()}`);
             if (!response.ok) {
                 throw new Error('Failed to load hotspots');
             }
@@ -210,8 +333,8 @@ class HotspotManager {
                 throw new Error('Invalid response format');
             }
             
-            this.hotspots = data.hotspots;
-            console.log('Set hotspots array:', this.hotspots);
+            this.hotspots.clear();
+            data.hotspots.forEach(hotspot => this.createHotspot(hotspot));
             this.renderHotspots();
         } catch (error) {
             console.error('Error loading hotspots:', error);
@@ -219,113 +342,131 @@ class HotspotManager {
     }
     
     async loadAssets() {
+        if (this.isLoading) {
+            console.log('Assets loading already in progress, skipping...');
+            return;
+        }
+        
+        this.isLoading = true;
         try {
-            const response = await fetch(`/api/assets?houseId=${this.currentHouse}`);
-            if (!response.ok) throw new Error('Failed to load assets');
+            // Store current video state before loading new assets
+            const previousState = this._storedVideoState;
             
-            const data = await response.json();
-            const assets = data.assets;
-            console.log('Loaded assets:', assets);
+            // Load house videos and assets in parallel
+            const [houseVideosResponse, houseAssetsResponse] = await Promise.all([
+                fetch(`/api/house-videos?houseId=${this.currentHouse}&_=${Date.now()}`),
+                fetch(`/api/assets?houseId=${this.currentHouse}&_=${Date.now()}`)
+            ]);
+
+            if (!houseVideosResponse.ok) throw new Error('Failed to load house videos');
+            if (!houseAssetsResponse.ok) throw new Error('Failed to load house assets');
+
+            const { houseVideo } = await houseVideosResponse.json();
+            const houseAssetsData = await houseAssetsResponse.json();
             
-            // Get playlists to map videos to hotspots
-            const playlistResponse = await fetch(`/api/playlists?houseId=${this.currentHouse}`);
-            if (!playlistResponse.ok) throw new Error('Failed to load playlists');
-            const playlistData = await playlistResponse.json();
-            const playlists = playlistData.playlists;
-            console.log('Loaded playlists:', playlists);
-            
-            // Load aerial video from global playlist
-            const globalPlaylist = playlists.global || {};
-            if (globalPlaylist.aerial && globalPlaylist.aerial.videoId) {
-                const aerialAsset = assets.find(a => a._id === globalPlaylist.aerial.videoId);
-                if (aerialAsset) {
-                    // Get the aerial video element
-                    const aerialVideo = document.getElementById('aerialVideo');
-                    if (!aerialVideo) {
-                        console.error('Aerial video element not found');
-                        return;
-                    }
+            console.log('House videos response:', houseVideo);
+            console.log('House assets response:', houseAssetsData);
 
-                    // Set video properties
-                    aerialVideo.src = aerialAsset.url;
-                    aerialVideo.loop = true;
-                    aerialVideo.autoplay = true;
-                    aerialVideo.muted = true;
-                    aerialVideo.playsInline = true;
-                    aerialVideo.preload = 'auto';
-
-                    // Add event listeners for video loading
-                    aerialVideo.addEventListener('loadedmetadata', () => {
-                        console.log('Aerial video metadata loaded:', {
-                            width: aerialVideo.videoWidth,
-                            height: aerialVideo.videoHeight
-                        });
-                        this.renderHotspots(); // Re-render hotspots with correct dimensions
-                    });
-
-                    aerialVideo.addEventListener('error', (e) => {
-                        console.error('Error loading aerial video:', e);
-                    });
-
-                    // Load the video
-                    await aerialVideo.load();
-                    console.log('Loaded aerial video from playlist:', aerialAsset.url);
-                    
-                    // Add asset label for aerial video
-                    const videoContainer = this.aerialView.querySelector('.video-container');
-                    const existingLabel = videoContainer.querySelector('.asset-label');
-                    if (existingLabel) {
-                        existingLabel.remove();
-                    }
-                    const label = document.createElement('div');
-                    label.className = 'asset-label';
-                    label.textContent = `Aerial Video: ${aerialAsset.name || 'Unnamed'}`;
-                    videoContainer.appendChild(label);
-
-                    // Add playback clock for aerial video
-                    const existingClock = videoContainer.querySelector('.playback-clock');
-                    if (existingClock) {
-                        existingClock.remove();
-                    }
-                    const clock = this.createPlaybackClock(videoContainer);
-                    this.updatePlaybackClock(aerialVideo, clock);
-                    this.playbackClocks.set('aerial', clock);
-                } else {
-                    console.log('Aerial video from playlist not found in assets');
-                }
-            } else {
-                console.log('No aerial video assigned in global playlist');
+            if (!houseVideo) {
+                throw new Error('Invalid house videos response format');
             }
-            
-            // Log video assignments for each hotspot
-            for (const [hotspotId, playlist] of Object.entries(playlists)) {
-                if (hotspotId === 'global') continue; // Skip global playlist
-                
-                const hotspot = this.hotspots.find(h => h._id === hotspotId);
-                const hotspotTitle = hotspot ? hotspot.title : 'Unknown';
-                
-                if (playlist.diveIn && playlist.diveIn.videoId) {
-                    const diveInAsset = assets.find(a => a._id === playlist.diveIn.videoId);
-                    console.log(`Dive-in video assigned for ${hotspotTitle}:`, diveInAsset ? diveInAsset.url : 'Not found');
-                } else {
-                    console.log(`No dive-in video assigned for ${hotspotTitle}`);
-                }
-                
-                if (playlist.floorLevel && playlist.floorLevel.videoId) {
-                    const floorLevelAsset = assets.find(a => a._id === playlist.floorLevel.videoId);
-                    console.log(`Floor level video assigned for ${hotspotTitle}:`, floorLevelAsset ? floorLevelAsset.url : 'Not found');
-                } else {
-                    console.log(`No floor level video assigned for ${hotspotTitle}`);
-                }
+            if (!houseAssetsData || !houseAssetsData.assets) {
+                throw new Error('Invalid house assets response format');
             }
+
+            // Store house assets for later use
+            this.assets = houseAssetsData.assets;
+
+            // Handle house aerial video
+            if (!houseVideo.aerial?.videoId) {
+                console.log('No aerial video configured for house:', this.currentHouse);
+                return;
+            }
+
+            const aerialAsset = this.assets.find(a => a._id === houseVideo.aerial.videoId);
+            if (!aerialAsset) {
+                console.log('Aerial video not found in assets:', houseVideo.aerial.videoId);
+                return;
+            }
+
+            console.log('Found aerial asset:', aerialAsset);
+            const aerialVideo = document.getElementById('aerialVideo');
+            if (!aerialVideo) {
+                console.error('Aerial video element not found');
+                return;
+            }
+
+            // Only update video if source is changing
+            const isNewSource = aerialVideo.src !== aerialAsset.url;
+            if (isNewSource) {
+                console.log('Updating aerial video source to:', aerialAsset.url);
+                aerialVideo.pause();
+                aerialVideo.src = aerialAsset.url;
+                aerialVideo.load();
+                
+                // Add event listeners for video loading
+                aerialVideo.addEventListener('loadedmetadata', () => {
+                    console.log('Aerial video metadata loaded:', {
+                        width: aerialVideo.videoWidth,
+                        height: aerialVideo.videoHeight,
+                        duration: aerialVideo.duration
+                    });
+                    this.renderHotspots();
+                });
+
+                aerialVideo.addEventListener('canplay', () => {
+                    console.log('Aerial video can play, starting playback');
+                    aerialVideo.play().catch(error => {
+                        console.error('Error playing aerial video:', error);
+                    });
+                });
+
+                aerialVideo.addEventListener('error', (e) => {
+                    console.error('Error loading aerial video:', {
+                        error: e,
+                        videoError: aerialVideo.error,
+                        src: aerialVideo.src
+                    });
+                });
+            } else if (previousState) {
+                // Restore previous state if source hasn't changed
+                this._storedVideoState = previousState;
+                this.restoreVideoState();
+            }
+
+            // Add asset label
+            const videoContainer = this.aerialView.querySelector('.video-container');
+            const existingLabel = videoContainer.querySelector('.asset-label');
+            if (existingLabel) {
+                existingLabel.remove();
+            }
+            const label = document.createElement('div');
+            label.className = 'asset-label';
+            label.textContent = `House ${this.currentHouse} Aerial Video: ${aerialAsset.name || 'Unnamed'}`;
+            videoContainer.appendChild(label);
+
         } catch (error) {
             console.error('Error loading assets:', error);
+            const videoContainer = this.aerialView.querySelector('.video-container');
+            if (videoContainer) {
+                videoContainer.innerHTML = `
+                    <div class="alert alert-danger m-3">
+                        Error loading assets. Please refresh the page.
+                    </div>
+                `;
+            }
+        } finally {
+            this.isLoading = false;
         }
     }
     
     renderHotspots() {
         // Clear existing hotspots
         const container = document.querySelector('.hotspot-container');
+        if (!container) {
+            console.error('Hotspot container not found');
+            return;
+        }
         container.innerHTML = '';
         
         // Get the aerial video element
@@ -376,7 +517,8 @@ class HotspotManager {
         svg.style.zIndex = '1000';
         
         // Add polygons for each hotspot
-        this.hotspots.forEach(hotspot => {
+        this.hotspots.forEach((hotspotData, hotspotId) => {
+            const hotspot = hotspotData.data;
             console.log('Creating polygon for hotspot:', JSON.stringify(hotspot, null, 2));
             
             if (!hotspot.points || !Array.isArray(hotspot.points) || hotspot.points.length < 3) {
@@ -386,7 +528,7 @@ class HotspotManager {
             
             const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             group.setAttribute('class', 'hotspot');
-            group.setAttribute('data-id', hotspot._id);
+            group.setAttribute('data-id', hotspotId);
             group.style.pointerEvents = 'all';
             group.style.cursor = 'pointer';
             group.style.transform = 'none';
@@ -394,11 +536,15 @@ class HotspotManager {
             
             const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
             
-            // Convert percentage coordinates to actual pixel coordinates
-            const pointsString = hotspot.points.map(p => {
-                const x = (p.x / 100) * videoWidth;
-                const y = (p.y / 100) * videoHeight;
-                return `${x},${y}`;
+            // Convert points to SVG polygon points string
+            const pointsString = hotspot.points.map(point => {
+                // Handle both object format {x, y} and array format [x, y]
+                const x = typeof point === 'object' ? point.x : point[0];
+                const y = typeof point === 'object' ? point.y : point[1];
+                // Convert percentage to actual pixel coordinates
+                const pixelX = (x / 100) * videoWidth;
+                const pixelY = (y / 100) * videoHeight;
+                return `${pixelX},${pixelY}`;
             }).join(' ');
             
             console.log('Setting polygon points:', pointsString);
@@ -492,6 +638,9 @@ class HotspotManager {
         this.currentHotspot = hotspot;
         
         if (hotspot.type === 'primary') {
+            // Store current aerial video state before transition
+            this.storeVideoState();
+            
             // Handle primary hotspot click
             this.showTransition(hotspot._id);
             this.stateIndicator.textContent = 'Current State: Transition View';
@@ -503,260 +652,327 @@ class HotspotManager {
     
     async showTransition(hotspotId) {
         try {
-            // Hide house selector when transitioning
-            if (this.houseSelector) {
-                this.houseSelector.style.display = 'none';
+            // Hide house selector during transition
+            const houseSelector = document.getElementById('houseSelector');
+            if (houseSelector) {
+                houseSelector.style.display = 'none';
             }
 
-            console.log('Starting transition for hotspot:', hotspotId);
+            // Fetch videos for this hotspot
+            const hotspotVideos = await this.fetchVideosForHotspot(hotspotId);
+            if (!hotspotVideos) {
+                throw new Error('Failed to load hotspot videos');
+            }
 
-            // Get the playlist for this hotspot
-            const playlistResponse = await fetch(`/api/playlists?houseId=${this.currentHouse}`);
-            if (!playlistResponse.ok) throw new Error('Failed to load playlist');
-            const playlistData = await playlistResponse.json();
-            
-            // Get the playlist for this hotspot from the playlists map
-            const playlist = playlistData.playlists[hotspotId];
-            console.log('Playlist data for transition:', playlist);
-            console.log('Dive-in video ID from playlist:', playlist?.diveIn?.videoId);
-
-            if (!playlist || !playlist.diveIn || !playlist.diveIn.videoId) {
-                console.error('No dive-in video assigned in playlist for hotspot:', hotspotId);
-                await this.showFloorLevel(playlist, hotspotId);
+            // Check if we have a dive-in video
+            if (!hotspotVideos.diveIn?.videoId) {
+                console.warn('No dive-in video found for hotspot:', hotspotId);
+                await this.showAerialView();
                 return;
             }
 
-            // Get the dive-in video asset
-            const assetsResponse = await fetch(`/api/assets?houseId=${this.currentHouse}`);
-            if (!assetsResponse.ok) throw new Error('Failed to load assets');
-            const assetsData = await assetsResponse.json();
-            console.log('Available assets:', assetsData.assets);
-            
-            const diveInAsset = assetsData.assets.find(a => a._id === playlist.diveIn.videoId);
-            console.log('Found dive-in asset:', diveInAsset);
-            
-            if (!diveInAsset) {
-                console.error('Dive-in video not found in assets:', playlist.diveIn.videoId);
-                await this.showFloorLevel(playlist, hotspotId);
-                return;
+            // Completely remove and recreate the transition view container
+            if (this.transitionView) {
+                // Remove all existing content
+                while (this.transitionView.firstChild) {
+                    this.transitionView.removeChild(this.transitionView.firstChild);
+                }
+
+                // Create new container structure
+                const container = document.createElement('div');
+                container.className = 'video-container';
+                container.style.cssText = `
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: black;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                `;
+
+                const placeholder = document.createElement('div');
+                placeholder.className = 'video-placeholder';
+                placeholder.style.cssText = `
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                `;
+
+                container.appendChild(placeholder);
+                this.transitionView.appendChild(container);
             }
-
-            if (!diveInAsset.url) {
-                console.error('Dive-in video has no URL:', diveInAsset);
-                await this.showFloorLevel(playlist, hotspotId);
-                return;
-            }
-
-            // Ensure video container exists
-            this.initializeViews();
-
-            // Get video container and placeholder
-            const videoContainer = this.transitionView.querySelector('.video-container');
-            const videoPlaceholder = videoContainer.querySelector('.video-placeholder');
-
-            if (!videoContainer || !videoPlaceholder) {
-                throw new Error('Video container not properly initialized');
-            }
-
-            // Update container styles to ensure visibility
-            videoContainer.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: black;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 1000;
-            `;
-
-            videoPlaceholder.style.cssText = `
-                width: 100%;
-                height: 100%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                position: relative;
-            `;
 
             // Create new video element
-            const newVideo = document.createElement('video');
-            newVideo.className = 'preview-video';
-            newVideo.muted = true;
-            newVideo.playsInline = true;
-            newVideo.autoplay = true;
-            newVideo.loop = false;
-            newVideo.style.cssText = `
+            const video = document.createElement('video');
+            video.className = 'preview-video';
+            video.muted = false;
+            video.playsInline = true;
+            video.autoplay = true;
+            video.loop = false;
+            video.preload = 'auto';
+            video.style.cssText = `
                 width: 100%;
                 height: 100%;
                 object-fit: cover;
-                position: absolute;
-                top: 0;
-                left: 0;
-                z-index: 1001;
             `;
 
-            // Add event listeners for debugging
-            newVideo.addEventListener('loadstart', () => console.log('Video load started'));
-            newVideo.addEventListener('loadeddata', () => console.log('Video data loaded'));
-            newVideo.addEventListener('canplay', () => console.log('Video can play'));
-            newVideo.addEventListener('playing', () => console.log('Video is playing'));
-            newVideo.addEventListener('error', (e) => {
-                console.error('Video error:', e);
-                console.error('Video error code:', newVideo.error?.code);
-                console.error('Video error message:', newVideo.error?.message);
-            });
-
-            // Set video source
-            newVideo.src = diveInAsset.url;
-            console.log('Loading dive-in video:', diveInAsset.url);
+            // Get the new container and placeholder
+            const videoContainer = this.transitionView.querySelector('.video-container');
+            const videoPlaceholder = videoContainer.querySelector('.video-placeholder');
 
             // Clear and update video placeholder
             videoPlaceholder.innerHTML = '';
-            videoPlaceholder.appendChild(newVideo);
-
-            // Add asset label
-            const label = document.createElement('div');
-            label.className = 'asset-label';
-            label.textContent = `Dive-in Video: ${diveInAsset.name || 'Unnamed'}`;
-            label.style.zIndex = '2000';
-            videoContainer.appendChild(label);
-
-            // After creating newVideo and before showing transition view
-            const transitionContainer = this.transitionView.querySelector('.video-container');
-            
-            // Add playback clock for transition video
-            const existingClock = transitionContainer.querySelector('.playback-clock');
-            if (existingClock) {
-                existingClock.remove();
-            }
-            const clock = this.createPlaybackClock(transitionContainer);
-            this.updatePlaybackClock(newVideo, clock);
-            this.playbackClocks.set('transition', clock);
+            videoPlaceholder.appendChild(video);
 
             // Show transition view
-            this.aerialView.style.display = 'none';
             this.transitionView.style.display = 'block';
-            this.transitionView.style.zIndex = '1000';
+            console.log('Transition view recreated and displayed');
 
-            // Reset and play the video
-            newVideo.currentTime = 0;
-            try {
-                const playPromise = newVideo.play();
-                if (playPromise !== undefined) {
-                    playPromise.then(() => {
-                        console.log('Playing dive-in video');
-                    }).catch(error => {
-                        console.error('Error playing video:', error);
-                        // Try to play again after a short delay
-                        setTimeout(async () => {
-                            try {
-                                await newVideo.play();
-                                console.log('Playing dive-in video after retry');
-                            } catch (retryError) {
-                                console.error('Error playing video after retry:', retryError);
-                                // If still failing, try to show floor level
-                                await this.showFloorLevel(playlist, hotspotId);
-                            }
-                        }, 1000);
-                    });
+            // Show loading state
+            this.updateStateIndicator('Loading dive-in video...');
+
+            // Wait for video to be ready
+            const videoReady = new Promise((resolve, reject) => {
+                let hasLoadedMetadata = false;
+                let hasLoadedData = false;
+                let hasCanPlay = false;
+                let isResolved = false;
+                let readyTimeout;
+
+                const cleanup = () => {
+                    if (isResolved) return;
+                    clearTimeout(readyTimeout);
+                    video.removeEventListener('loadedmetadata', metadataHandler);
+                    video.removeEventListener('loadeddata', dataHandler);
+                    video.removeEventListener('canplay', canPlayHandler);
+                    video.removeEventListener('error', errorHandler);
+                };
+
+                const checkReady = () => {
+                    if (isResolved) return;
+                    if (hasLoadedMetadata && hasLoadedData && hasCanPlay) {
+                        console.log('Dive-in video fully ready:', hotspotVideos.diveIn.name);
+                        isResolved = true;
+                        cleanup();
+                        resolve();
+                    }
+                };
+
+                const metadataHandler = () => {
+                    if (isResolved) return;
+                    console.log('Loaded metadata for dive-in video:', hotspotVideos.diveIn.name);
+                    hasLoadedMetadata = true;
+                    checkReady();
+                };
+
+                const dataHandler = () => {
+                    if (isResolved) return;
+                    console.log('Loaded data for dive-in video:', hotspotVideos.diveIn.name);
+                    hasLoadedData = true;
+                    checkReady();
+                };
+
+                const canPlayHandler = () => {
+                    if (isResolved) return;
+                    console.log('Dive-in video can play:', hotspotVideos.diveIn.name);
+                    hasCanPlay = true;
+                    checkReady();
+                };
+
+                const errorHandler = (e) => {
+                    if (isResolved) return;
+                    console.error('Error loading dive-in video:', hotspotVideos.diveIn.name, e);
+                    cleanup();
+                    reject(new Error('Failed to load dive-in video'));
+                };
+
+                readyTimeout = setTimeout(() => {
+                    if (!isResolved) {
+                        console.warn('Timeout waiting for dive-in video to be ready:', hotspotVideos.diveIn.name);
+                        cleanup();
+                        reject(new Error('Video ready timeout'));
+                    }
+                }, 60000);
+
+                video.addEventListener('loadedmetadata', metadataHandler);
+                video.addEventListener('loadeddata', dataHandler);
+                video.addEventListener('canplay', canPlayHandler);
+                video.addEventListener('error', errorHandler);
+
+                video.src = hotspotVideos.diveIn.url;
+                video.load();
+            });
+
+            await videoReady;
+
+            // Update state
+            this.updateStateIndicator('Playing dive-in video...');
+
+            // Attempt playback with retry logic
+            let retryCount = 0;
+            const maxRetries = 3;
+            const baseRetryDelay = 1000;
+            const maxRetryDelay = 5000;
+
+            const attemptPlayback = async () => {
+                try {
+                    console.log(`Attempting to play dive-in video (attempt ${retryCount + 1}/${maxRetries})`);
+                    await video.play();
+                    console.log('Dive-in video playback started successfully');
+                } catch (error) {
+                    console.warn(`Playback attempt ${retryCount + 1} failed:`, error);
+                    
+                    if (retryCount < maxRetries) {
+                        retryCount++;
+                        const delay = Math.min(baseRetryDelay * Math.pow(2, retryCount), maxRetryDelay);
+                        console.log(`Retrying playback in ${Math.round(delay/1000)}s`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return attemptPlayback();
+                    }
+                    
+                    throw new Error('Failed to start video playback after multiple attempts');
                 }
-            } catch (error) {
-                console.error('Error in video play attempt:', error);
-                await this.showFloorLevel(playlist, hotspotId);
-            }
-
-            // When video ends, show floor level
-            newVideo.onended = async () => {
-                console.log('Dive-in video ended, showing floor level');
-                await this.showFloorLevel(playlist, hotspotId);
             };
+
+            await attemptPlayback();
+
+            // Set up ended handler
+            const endedHandler = async () => {
+                console.log('Dive-in video ended, transitioning to floor level');
+                video.removeEventListener('ended', endedHandler);
+                
+                // Clean up video element
+                video.pause();
+                video.removeAttribute('src');
+                video.load();
+                video.remove();
+
+                // Clean up transition view
+                if (this.transitionView) {
+                    while (this.transitionView.firstChild) {
+                        this.transitionView.removeChild(this.transitionView.firstChild);
+                    }
+                    this.transitionView.style.display = 'none';
+                }
+                
+                try {
+                    await this.showFloorLevel(hotspotVideos, hotspotId);
+                } catch (error) {
+                    console.error('Error transitioning to floor level:', error);
+                    this.updateStateIndicator('Error transitioning to floor level');
+                    await this.showAerialView();
+                }
+            };
+
+            video.addEventListener('ended', endedHandler);
+
         } catch (error) {
-            console.error('Error in showTransition:', error);
-            this.returnToAerial();
+            console.error('Error during dive-in video playback:', error);
+            this.updateStateIndicator('Error playing dive-in video');
+            await this.showAerialView();
         }
     }
     
     async showFloorLevel(playlist, hotspotId) {
         try {
-            // Hide house selector when showing floor level
+            console.log('Starting showFloorLevel with:', { playlist, hotspotId });
+            
+            // Hide house selector
             if (this.houseSelector) {
                 this.houseSelector.style.display = 'none';
             }
 
-            // Update state indicator
-            this.stateIndicator.textContent = 'Current State: Floor Level View';
+            // Completely remove and recreate the floor level view container
+            if (this.floorLevelView) {
+                // Remove all existing content
+                while (this.floorLevelView.firstChild) {
+                    this.floorLevelView.removeChild(this.floorLevelView.firstChild);
+                }
 
-            // If no playlist was provided, try to get it
-            if (!playlist) {
-                const playlistResponse = await fetch(`/api/playlists?houseId=${this.currentHouse}`);
+                // Create new container structure
+                const container = document.createElement('div');
+                container.className = 'video-container';
+                container.style.cssText = `
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: black;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                `;
+
+                const placeholder = document.createElement('div');
+                placeholder.className = 'video-placeholder';
+                placeholder.style.cssText = `
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                `;
+
+                container.appendChild(placeholder);
+                this.floorLevelView.appendChild(container);
+            }
+
+            // Update state indicator
+            this.updateStateIndicator('Loading floor level video...');
+
+            // Validate playlist data
+            if (!playlist?.floorLevel?.videoId) {
+                console.log('No floor level data in playlist, fetching from API...');
+                const playlistResponse = await fetch(`/api/playlists?houseId=${this.currentHouse}&_=${Date.now()}`);
                 if (!playlistResponse.ok) throw new Error('Failed to load playlist');
                 const playlistData = await playlistResponse.json();
                 playlist = playlistData.playlists[hotspotId];
+                console.log('Fetched playlist data:', playlist);
             }
 
-            console.log('Floor level playlist data:', playlist);
-
-            if (!playlist || !playlist.floorLevel || !playlist.floorLevel.videoId) {
-                console.log('No floor level video assigned, returning to aerial view');
+            if (!playlist?.floorLevel?.videoId) {
+                console.warn('No floor level video assigned, returning to aerial view');
                 this.returnToAerial();
                 return;
             }
 
-            // Get the floor level video asset
-            const assetsResponse = await fetch(`/api/assets?houseId=${this.currentHouse}`);
+            // Get floor level video asset
+            const assetsResponse = await fetch(`/api/assets?houseId=${this.currentHouse}&_=${Date.now()}`);
             if (!assetsResponse.ok) throw new Error('Failed to load assets');
             const assetsData = await assetsResponse.json();
             const floorLevelAsset = assetsData.assets.find(a => a._id === playlist.floorLevel.videoId);
             
             if (!floorLevelAsset) {
-                console.log('Floor level video not found, returning to aerial view');
+                console.warn('Floor level video not found in assets');
                 this.returnToAerial();
                 return;
             }
 
-            // Ensure video container exists
-            this.initializeViews();
+            console.log('Found floor level asset:', floorLevelAsset);
 
-            // Get video container and placeholder
+            // Get the new container and placeholder
             const videoContainer = this.floorLevelView.querySelector('.video-container');
             const videoPlaceholder = videoContainer.querySelector('.video-placeholder');
-
-            if (!videoContainer || !videoPlaceholder) {
-                throw new Error('Video container not properly initialized');
-            }
 
             // Create new video element
             const newFloorLevelVideo = document.createElement('video');
             newFloorLevelVideo.className = 'preview-video';
-            newFloorLevelVideo.muted = true;
+            newFloorLevelVideo.muted = false;
             newFloorLevelVideo.playsInline = true;
-            newFloorLevelVideo.loop = false;
             newFloorLevelVideo.autoplay = true;
+            newFloorLevelVideo.loop = false;
+            newFloorLevelVideo.preload = 'auto';
             newFloorLevelVideo.style.cssText = `
                 width: 100%;
                 height: 100%;
                 object-fit: cover;
-                position: absolute;
-                top: 0;
-                left: 0;
             `;
-            newFloorLevelVideo.src = floorLevelAsset.url;
-            console.log('Loading floor level video:', floorLevelAsset.url);
-            
-            // Add event listeners for debugging
-            newFloorLevelVideo.addEventListener('loadstart', () => console.log('Floor level video load started'));
-            newFloorLevelVideo.addEventListener('loadeddata', () => console.log('Floor level video data loaded'));
-            newFloorLevelVideo.addEventListener('canplay', () => console.log('Floor level video can play'));
-            newFloorLevelVideo.addEventListener('playing', () => console.log('Floor level video is playing'));
-            newFloorLevelVideo.addEventListener('error', (e) => console.error('Floor level video error:', e));
-            newFloorLevelVideo.addEventListener('ended', async () => {
-                console.log('Floor level video ended, playing zoom out video');
-                // Play zoom out video instead of returning to aerial view
-                await this.playZoomOutVideo(playlist, hotspotId);
-            });
 
             // Clear and update video placeholder
             videoPlaceholder.innerHTML = '';
@@ -768,56 +984,276 @@ class HotspotManager {
             label.textContent = `Floor Level Video: ${floorLevelAsset.name || 'Unnamed'}`;
             videoContainer.appendChild(label);
 
-            // After creating newFloorLevelVideo and before showing floor level view
-            const floorLevelContainer = this.floorLevelView.querySelector('.video-container');
+            // Show floor level view
+            this.floorLevelView.style.display = 'block';
+            console.log('Floor level view recreated and displayed');
+
+            // Add event listeners
+            const eventListeners = new Map();
             
-            // Add playback clock for floor level video
-            const existingClock = floorLevelContainer.querySelector('.playback-clock');
-            if (existingClock) {
-                existingClock.remove();
-            }
-            const clock = this.createPlaybackClock(floorLevelContainer);
+            const addListener = (event, handler) => {
+                newFloorLevelVideo.addEventListener(event, handler);
+                eventListeners.set(event, handler);
+                console.log(`Added ${event} listener to floor level video`);
+            };
+
+            addListener('loadstart', () => {
+                console.log('Floor level video load started');
+                this.updateStateIndicator('Loading floor level video...');
+            });
+
+            addListener('loadedmetadata', () => {
+                console.log('Floor level video metadata loaded');
+                this.updateStateIndicator('Floor level video metadata loaded...');
+            });
+
+            addListener('loadeddata', () => {
+                console.log('Floor level video data loaded');
+                this.updateStateIndicator('Floor level video data loaded...');
+            });
+
+            addListener('canplay', () => {
+                console.log('Floor level video can play');
+                this.updateStateIndicator('Floor level video ready to play...');
+            });
+
+            addListener('playing', () => {
+                console.log('Floor level video is playing');
+                this.updateStateIndicator('Playing floor level video...');
+            });
+
+            addListener('error', (e) => {
+                console.error('Floor level video error:', e);
+                this.updateStateIndicator('Error playing floor level video');
+                console.error('Video error details:', {
+                    code: newFloorLevelVideo.error?.code,
+                    message: newFloorLevelVideo.error?.message,
+                    src: newFloorLevelVideo.src,
+                    readyState: newFloorLevelVideo.readyState,
+                    networkState: newFloorLevelVideo.networkState
+                });
+            });
+
+            // Handle video end
+            addListener('ended', async () => {
+                console.log('Floor level video ended, preparing zoom out transition');
+                this.updateStateIndicator('Preparing zoom out transition...');
+                
+                // Clean up event listeners
+                eventListeners.forEach((handler, event) => {
+                    newFloorLevelVideo.removeEventListener(event, handler);
+                });
+                eventListeners.clear();
+
+                // Clean up floor level video
+                newFloorLevelVideo.pause();
+                newFloorLevelVideo.removeAttribute('src');
+                newFloorLevelVideo.load();
+                newFloorLevelVideo.remove();
+
+                // Clean up floor level view
+                if (this.floorLevelView) {
+                    while (this.floorLevelView.firstChild) {
+                        this.floorLevelView.removeChild(this.floorLevelView.firstChild);
+                    }
+                    this.floorLevelView.style.display = 'none';
+                }
+
+                // Prepare zoom out video
+                const zoomOutAsset = assetsData.assets.find(a => a._id === playlist.zoomOut.videoId);
+                if (!zoomOutAsset) {
+                    console.warn('Zoom out video not found');
+                    this.returnToAerial();
+                    return;
+                }
+
+                // Completely remove and recreate the transition view container
+                if (this.transitionView) {
+                    // Remove all existing content
+                    while (this.transitionView.firstChild) {
+                        this.transitionView.removeChild(this.transitionView.firstChild);
+                    }
+
+                    // Create new container structure
+                    const container = document.createElement('div');
+                    container.className = 'video-container';
+                    container.style.cssText = `
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 100%;
+                        background: black;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    `;
+
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'video-placeholder';
+                    placeholder.style.cssText = `
+                        width: 100%;
+                        height: 100%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    `;
+
+                    container.appendChild(placeholder);
+                    this.transitionView.appendChild(container);
+                }
+
+                // Get the new container and placeholder
+                const transitionContainer = this.transitionView.querySelector('.video-container');
+                const transitionPlaceholder = transitionContainer.querySelector('.video-placeholder');
+
+                // Create zoom out video
+                const zoomOutVideo = document.createElement('video');
+                zoomOutVideo.className = 'preview-video';
+                zoomOutVideo.muted = true;
+                zoomOutVideo.playsInline = true;
+                zoomOutVideo.autoplay = true;
+                zoomOutVideo.loop = false;
+                zoomOutVideo.preload = 'auto';
+                zoomOutVideo.style.cssText = `
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                `;
+
+                // Add video to placeholder
+                transitionPlaceholder.appendChild(zoomOutVideo);
+
+                // Add asset label
+                const zoomOutLabel = document.createElement('div');
+                zoomOutLabel.className = 'asset-label';
+                zoomOutLabel.textContent = `Zoom Out Video: ${zoomOutAsset.name || 'Unnamed'}`;
+                transitionContainer.appendChild(zoomOutLabel);
+
+                // Show transition view
+                this.transitionView.style.display = 'block';
+                console.log('Transition view recreated and displayed');
+
+                // Set source and load video
+                zoomOutVideo.src = zoomOutAsset.url;
+                zoomOutVideo.load();
+
+                // Play zoom out video
+                try {
+                    await zoomOutVideo.play();
+                    console.log('Playing zoom out video');
+                    this.updateStateIndicator('Playing zoom out video...');
+                } catch (error) {
+                    console.error('Error playing zoom out video:', error);
+                    this.returnToAerial();
+                    return;
+                }
+
+                // Handle zoom out video end
+                zoomOutVideo.onended = () => {
+                    console.log('Zoom out video ended, returning to aerial view');
+                    // Clean up zoom out video
+                    zoomOutVideo.pause();
+                    zoomOutVideo.removeAttribute('src');
+                    zoomOutVideo.load();
+                    zoomOutVideo.remove();
+                    // Clean up transition view
+                    if (this.transitionView) {
+                        while (this.transitionView.firstChild) {
+                            this.transitionView.removeChild(this.transitionView.firstChild);
+                        }
+                        this.transitionView.style.display = 'none';
+                    }
+                    this.returnToAerial();
+                };
+            });
+
+            // Add playback clock
+            const clock = this.createPlaybackClock(videoContainer);
             this.updatePlaybackClock(newFloorLevelVideo, clock);
             this.playbackClocks.set('floorLevel', clock);
 
-            // Show floor level view
-            this.transitionView.style.display = 'none';
-            this.floorLevelView.style.display = 'block';
+            // Set source and load video
+            this.updateStateIndicator('Loading floor level video...');
+            newFloorLevelVideo.src = floorLevelAsset.url;
+            newFloorLevelVideo.load();
 
-            // Reset and play the video
-            newFloorLevelVideo.currentTime = 0;
+            // Play floor level video
             try {
                 await newFloorLevelVideo.play();
                 console.log('Playing floor level video');
+                this.updateStateIndicator('Playing floor level video...');
             } catch (error) {
                 console.error('Error playing floor level video:', error);
-                // Try to play again after a short delay
+                this.updateStateIndicator('Retrying floor level video playback...');
                 setTimeout(async () => {
                     try {
                         await newFloorLevelVideo.play();
                         console.log('Playing floor level video after retry');
+                        this.updateStateIndicator('Playing floor level video...');
                     } catch (retryError) {
                         console.error('Error playing floor level video after retry:', retryError);
+                        this.updateStateIndicator('Error playing floor level video');
+                        this.returnToAerial();
                     }
                 }, 1000);
             }
         } catch (error) {
             console.error('Error in showFloorLevel:', error);
+            this.updateStateIndicator('Error loading floor level video');
             this.returnToAerial();
         }
     }
-    
+
     returnToAerial() {
-        this.transitionView.style.display = 'none';
-        this.floorLevelView.style.display = 'none';
-        this.aerialView.style.display = 'block';
-        this.aerialVideo.play();
-        this.stateIndicator.textContent = 'Current State: Aerial View';
+        console.log('Returning to aerial view');
         
-        // Show house selector when returning to aerial view
+        // Hide views
+        if (this.transitionView) {
+            this.transitionView.style.display = 'none';
+            console.log('Transition view hidden');
+        }
+        if (this.floorLevelView) {
+            this.floorLevelView.style.display = 'none';
+            console.log('Floor level view hidden');
+        }
+        
+        // Show aerial view
+        if (this.aerialView) {
+            this.aerialView.style.display = 'block';
+            console.log('Aerial view displayed');
+        }
+        
+        // Reset video states
+        if (this.aerialVideo) {
+            this.aerialVideo.currentTime = 0;
+            this.aerialVideo.play().catch(error => {
+                console.error('Error playing aerial video:', error);
+                setTimeout(() => {
+                    this.aerialVideo.play().catch(console.error);
+                }, 1000);
+            });
+        }
+        
+        // Update state indicator
+        this.updateStateIndicator('Current State: Aerial View');
+        
+        // Show house selector
         if (this.houseSelector) {
             this.houseSelector.style.display = 'block';
+            console.log('House selector displayed');
         }
+        
+        // Reset current hotspot
+        this.currentHotspot = null;
+        
+        // Clear playback clocks
+        this.playbackClocks.forEach(clock => {
+            if (clock && clock.parentNode) {
+                clock.parentNode.removeChild(clock);
+            }
+        });
+        this.playbackClocks.clear();
     }
     
     showInfoPanel(hotspot) {
@@ -887,7 +1323,7 @@ class HotspotManager {
     async handleBackToAerial() {
         try {
             // Get the playlist for the current house
-            const playlistResponse = await fetch(`/api/playlists?houseId=${this.currentHouse}`);
+            const playlistResponse = await fetch(`/api/playlists?houseId=${this.currentHouse}&_=${Date.now()}`);
             if (!playlistResponse.ok) throw new Error('Failed to load playlist');
             const playlistData = await playlistResponse.json();
             
@@ -903,7 +1339,7 @@ class HotspotManager {
             }
 
             // Get the zoom out video asset
-            const assetsResponse = await fetch(`/api/assets?houseId=${this.currentHouse}`);
+            const assetsResponse = await fetch(`/api/assets?houseId=${this.currentHouse}&_=${Date.now()}`);
             if (!assetsResponse.ok) throw new Error('Failed to load assets');
             const assetsData = await assetsResponse.json();
             const zoomOutAsset = assetsData.assets.find(a => a._id === playlist.zoomOut.videoId);
@@ -996,19 +1432,27 @@ class HotspotManager {
     }
     
     handleVideoEnd() {
-        // Reset views
-        this.floorLevelView.style.display = 'none';
-        this.transitionView.style.display = 'none';
-        
+        // Add a longer delay before resetting views
         setTimeout(() => {
+            this.floorLevelView.style.display = 'none';
             this.transitionView.style.display = 'none';
             this.aerialView.style.display = 'block';
+            this.aerialView.style.opacity = '0';
+            this.aerialView.style.transition = 'opacity 0.5s ease';
+            
+            // Fade in aerial view
+            setTimeout(() => {
+                this.aerialView.style.opacity = '1';
+            }, 50);
             
             // Update state indicator
             if (this.stateIndicator) {
                 this.stateIndicator.textContent = 'Current State: Aerial View';
             }
-        }, 2000);
+            
+            // Restore video state
+            this.restoreVideoState();
+        }, 3000); // Increased from 2000ms to 3000ms
     }
 
     async refreshAllData() {
@@ -1017,6 +1461,9 @@ class HotspotManager {
             this.updateButton.textContent = 'Updating...';
             this.updateButton.disabled = true;
 
+            // Clear preloaded videos
+            this.preloadedVideos.clear();
+
             // Clear only the hotspots, preserving other elements
             const existingHotspots = this.hotspotContainer.querySelectorAll('.hotspot');
             existingHotspots.forEach(hotspot => hotspot.remove());
@@ -1024,14 +1471,18 @@ class HotspotManager {
             // Reload all videos and assets
             await this.loadAssets();
 
+            // Preload all videos again
+            await this.preloadAllVideos();
+
             // Fetch and update hotspots
-            const response = await fetch(`/api/hotspots?houseId=${this.currentHouse}`);
+            const response = await fetch(`/api/hotspots?houseId=${this.currentHouse}&_=${Date.now()}`);
             if (!response.ok) throw new Error('Failed to load hotspots');
             const data = await response.json();
             
             if (data && data.hotspots) {
                 // Update hotspots array and render them
-                this.hotspots = data.hotspots;
+                this.hotspots.clear();
+                data.hotspots.forEach(hotspot => this.createHotspot(hotspot));
                 this.renderHotspots();
             }
 
@@ -1079,6 +1530,18 @@ class HotspotManager {
 
     // Add new method to play zoom out video
     async playZoomOutVideo(playlist, hotspotId) {
+        if (this.isPreloading) {
+            console.log('Waiting for videos to finish preloading...');
+            await new Promise(resolve => {
+                const checkPreloading = setInterval(() => {
+                    if (!this.isPreloading) {
+                        clearInterval(checkPreloading);
+                        resolve();
+                    }
+                }, 100);
+            });
+        }
+
         try {
             // Hide house selector during zoom out
             if (this.houseSelector) {
@@ -1095,7 +1558,7 @@ class HotspotManager {
             this.stateIndicator.textContent = 'Current State: Zoom Out View';
 
             // Get the zoom out video asset
-            const assetsResponse = await fetch(`/api/assets?houseId=${this.currentHouse}`);
+            const assetsResponse = await fetch(`/api/assets?houseId=${this.currentHouse}&_=${Date.now()}`);
             if (!assetsResponse.ok) throw new Error('Failed to load assets');
             const assetsData = await assetsResponse.json();
             const zoomOutAsset = assetsData.assets.find(a => a._id === playlist.zoomOut.videoId);
@@ -1110,22 +1573,46 @@ class HotspotManager {
             const videoContainer = this.transitionView.querySelector('.video-container');
             const videoPlaceholder = videoContainer.querySelector('.video-placeholder');
 
-            // Create new video element
-            const newVideo = document.createElement('video');
-            newVideo.className = 'preview-video';
-            newVideo.muted = true;
-            newVideo.playsInline = true;
-            newVideo.autoplay = true;
-            newVideo.loop = false;
-            newVideo.style.cssText = `
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-                position: absolute;
-                top: 0;
-                left: 0;
-            `;
-            newVideo.src = zoomOutAsset.url;
+            // Ensure transition view is ready but invisible
+            this.transitionView.style.display = 'block';
+            this.transitionView.style.opacity = '0';
+
+            // Get the preloaded video or create a new one if not preloaded
+            let newVideo = this.preloadedVideos.get(playlist.zoomOut.videoId);
+            if (!newVideo) {
+                console.log('Zoom out video not preloaded, creating new video element');
+                newVideo = document.createElement('video');
+                newVideo.className = 'preview-video';
+                newVideo.muted = true;
+                newVideo.playsInline = true;
+                newVideo.autoplay = true;
+                newVideo.loop = false;
+                newVideo.src = zoomOutAsset.url;
+                newVideo.preload = 'auto';
+                
+                // Wait for video to be ready
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('Video load timeout'));
+                    }, 10000);
+
+                    const canPlayHandler = () => {
+                        clearTimeout(timeout);
+                        newVideo.removeEventListener('canplay', canPlayHandler);
+                        resolve();
+                    };
+                    newVideo.addEventListener('canplay', canPlayHandler);
+                    newVideo.load();
+                });
+            } else {
+                // Reset the preloaded video
+                newVideo.currentTime = 0;
+                newVideo.className = 'preview-video';
+                newVideo.muted = true;
+                newVideo.playsInline = true;
+                newVideo.autoplay = true;
+                newVideo.loop = false;
+            }
 
             // Clear and update video placeholder
             videoPlaceholder.innerHTML = '';
@@ -1137,7 +1624,7 @@ class HotspotManager {
             label.textContent = `Zoom Out Video: ${zoomOutAsset.name || 'Unnamed'}`;
             videoContainer.appendChild(label);
 
-            // Add playback clock for zoom out video
+            // Add playback clock
             const existingClock = videoContainer.querySelector('.playback-clock');
             if (existingClock) {
                 existingClock.remove();
@@ -1146,9 +1633,13 @@ class HotspotManager {
             this.updatePlaybackClock(newVideo, clock);
             this.playbackClocks.set('zoomOut', clock);
 
-            // Show transition view
-            this.floorLevelView.style.display = 'none';
-            this.transitionView.style.display = 'block';
+            // Fade in transition view
+            requestAnimationFrame(() => {
+                this.transitionView.style.opacity = '1';
+            });
+
+            // Wait for fade in to complete before playing
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             // Reset and play the video
             newVideo.currentTime = 0;
@@ -1157,52 +1648,623 @@ class HotspotManager {
                 console.log('Playing zoom out video');
             } catch (error) {
                 console.error('Error playing zoom out video:', error);
-                // Try to play again after a short delay
-                setTimeout(async () => {
-                    try {
-                        await newVideo.play();
-                        console.log('Playing zoom out video after retry');
-                    } catch (retryError) {
-                        console.error('Error playing zoom out video after retry:', retryError);
-                    }
-                }, 1000);
+                if (error.name !== 'AbortError') {
+                    setTimeout(async () => {
+                        try {
+                            await newVideo.play();
+                            console.log('Playing zoom out video after retry');
+                        } catch (retryError) {
+                            console.error('Error playing zoom out video after retry:', retryError);
+                            this.returnToAerial();
+                        }
+                    }, 1000);
+                } else {
+                    this.returnToAerial();
+                }
             }
 
-            // When zoom out video ends, return to aerial view
+            // When zoom out video ends, return to aerial view with crossfade
             newVideo.onended = () => {
                 console.log('Zoom out video ended, returning to aerial view');
-                this.returnToAerial();
+                // Start crossfade to aerial view
+                if (this.aerialVideo) {
+                    // Ensure aerial view is visible but transparent
+                    this.aerialView.style.display = 'block';
+                    this.aerialView.style.opacity = '0';
+                    this.aerialVideo.style.opacity = '0';
+                    
+                    // Start playing aerial video before transition
+                    this.aerialVideo.play().catch(console.error);
+                    
+                    // Fade in aerial view
+                    requestAnimationFrame(() => {
+                        this.aerialView.style.opacity = '1';
+                        this.aerialVideo.style.opacity = '1';
+                        
+                        // Hide transition view after fade
+                        setTimeout(() => {
+                            this.transitionView.style.display = 'none';
+                            this.floorLevelView.style.display = 'none';
+                            // Show house selector after transition is complete
+                            if (this.houseSelector) {
+                                this.houseSelector.style.display = 'block';
+                            }
+                        }, 1000);
+                    });
+                } else {
+                    this.returnToAerial();
+                }
             };
         } catch (error) {
             console.error('Error in playZoomOutVideo:', error);
             this.returnToAerial();
         }
     }
+
+    // Create a hotspot element
+    createHotspot(hotspot) {
+        console.log('Creating hotspot:', hotspot);
+        
+        // Create SVG element for the hotspot
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', '100%');
+        svg.style.position = 'absolute';
+        svg.style.top = '0';
+        svg.style.left = '0';
+        svg.style.pointerEvents = 'all';
+
+        // Create polygon for the hotspot
+        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        
+        // Convert points to SVG polygon points string
+        if (hotspot.points && Array.isArray(hotspot.points)) {
+            const pointsString = hotspot.points.map(point => {
+                // Handle both object format {x, y} and array format [x, y]
+                const x = typeof point === 'object' ? point.x : point[0];
+                const y = typeof point === 'object' ? point.y : point[1];
+                return `${x},${y}`;
+            }).join(' ');
+            
+            console.log('Setting polygon points:', pointsString);
+            polygon.setAttribute('points', pointsString);
+        } else {
+            console.error('Invalid points data:', hotspot.points);
+            return;
+        }
+
+        // Set polygon attributes
+        polygon.setAttribute('fill', 'rgba(229, 9, 20, 0)');
+        polygon.setAttribute('stroke', 'none');
+        polygon.setAttribute('stroke-width', '0');
+        polygon.setAttribute('data-hotspot-id', hotspot._id);
+        polygon.setAttribute('data-type', hotspot.type);
+        polygon.setAttribute('title', hotspot.title || '');
+
+        // Add hover effects
+        polygon.addEventListener('mouseover', () => {
+            polygon.setAttribute('fill', 'rgba(229, 9, 20, 0.4)');
+        });
+
+        polygon.addEventListener('mouseout', () => {
+            polygon.setAttribute('fill', 'rgba(229, 9, 20, 0)');
+        });
+
+        // Add click handler
+        polygon.addEventListener('click', () => {
+            console.log('Hotspot clicked:', hotspot);
+            this.handleHotspotClick(hotspot);
+        });
+
+        // Add polygon to SVG
+        svg.appendChild(polygon);
+        
+        // Store hotspot reference
+        this.hotspots.set(hotspot._id, { element: svg, data: hotspot });
+        
+        // Add SVG to container
+        if (this.hotspotContainer) {
+            this.hotspotContainer.appendChild(svg);
+            console.log('Hotspot created and added to container');
+        } else {
+            console.error('Hotspot container not found');
+        }
+    }
+
+    // Clear all hotspots
+    clearHotspots() {
+        console.log('Clearing all hotspots');
+        if (this.hotspotContainer) {
+            this.hotspotContainer.innerHTML = '';
+            this.hotspots.clear();
+        }
+    }
+
+    // Add new method to preload videos
+    async initializeAndPreload() {
+        try {
+            this.isPreloading = true;
+            this.stateIndicator.textContent = 'Loading videos...';
+            
+            // Create loading overlay
+            const loadingOverlay = document.createElement('div');
+            loadingOverlay.id = 'loadingOverlay';
+            loadingOverlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.9);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                z-index: 9999;
+                color: white;
+            `;
+            
+            const progressBar = document.createElement('div');
+            progressBar.style.cssText = `
+                width: 80%;
+                max-width: 400px;
+                height: 20px;
+                background: #333;
+                border-radius: 10px;
+                margin: 20px 0;
+                overflow: hidden;
+            `;
+            
+            const progressFill = document.createElement('div');
+            progressFill.style.cssText = `
+                width: 0%;
+                height: 100%;
+                background: #e50914;
+                transition: width 0.3s ease;
+            `;
+            
+            const statusText = document.createElement('div');
+            statusText.style.cssText = `
+                margin-top: 10px;
+                font-size: 14px;
+                color: #ccc;
+            `;
+            statusText.textContent = 'Loading videos...';
+            
+            progressBar.appendChild(progressFill);
+            loadingOverlay.appendChild(progressBar);
+            loadingOverlay.appendChild(statusText);
+            document.body.appendChild(loadingOverlay);
+
+            // Start preloading
+            await this.preloadAllVideos((progress) => {
+                progressFill.style.width = `${progress}%`;
+                statusText.textContent = `Loading videos... ${Math.round(progress)}%`;
+            });
+
+            // Remove loading overlay
+            loadingOverlay.remove();
+            this.isPreloading = false;
+            this.stateIndicator.textContent = 'Current State: Aerial View';
+            
+            // Start aerial video playback
+            if (this.aerialVideo) {
+                try {
+                    await this.aerialVideo.play();
+                } catch (error) {
+                    console.error('Error playing aerial video:', error);
+                    // Try one more time after a short delay
+                    setTimeout(async () => {
+                        try {
+                            await this.aerialVideo.play();
+                        } catch (retryError) {
+                            console.error('Error playing aerial video after retry:', retryError);
+                        }
+                    }, 1000);
+                }
+            }
+        } catch (error) {
+            console.error('Error during initialization:', error);
+            this.stateIndicator.textContent = 'Error loading videos - some videos may load on demand';
+            // Continue initialization even if there are errors
+            this.isPreloading = false;
+            
+            // Try to start aerial video anyway
+            if (this.aerialVideo) {
+                try {
+                    await this.aerialVideo.play();
+                } catch (playError) {
+                    console.error('Error playing aerial video:', playError);
+                }
+            }
+        }
+    }
+
+    // Modify preloadAllVideos to handle large files better
+    async preloadAllVideos(progressCallback) {
+        try {
+            console.log('Starting video preload...');
+            
+            // Load all assets first
+            const assetsResponse = await fetch(`/api/assets?houseId=${this.currentHouse}&_=${Date.now()}`);
+            if (!assetsResponse.ok) throw new Error('Failed to load assets');
+            const { assets } = await assetsResponse.json();
+            
+            const videosResponse = await fetch(`/api/hotspot-videos?houseId=${this.currentHouse}&_=${Date.now()}`);
+            if (!videosResponse.ok) throw new Error('Failed to load hotspot videos');
+            const { hotspotVideos } = await videosResponse.json();
+
+            // Create a Set of all video IDs we need to preload
+            const videoIds = new Set();
+            
+            // Add aerial video first (highest priority)
+            const houseVideosResponse = await fetch(`/api/house-videos?houseId=${this.currentHouse}&_=${Date.now()}`);
+            if (houseVideosResponse.ok) {
+                const { houseVideo } = await houseVideosResponse.json();
+                if (houseVideo?.aerial?.videoId) {
+                    videoIds.add(houseVideo.aerial.videoId);
+                }
+            }
+
+            // Add all hotspot videos
+            if (Array.isArray(hotspotVideos)) {
+                hotspotVideos.forEach(hotspot => {
+                    if (hotspot.diveIn?.videoId) videoIds.add(hotspot.diveIn.videoId);
+                    if (hotspot.floorLevel?.videoId) videoIds.add(hotspot.floorLevel.videoId);
+                    if (hotspot.zoomOut?.videoId) videoIds.add(hotspot.zoomOut.videoId);
+                });
+            }
+
+            // Add global videos
+            const globalVideosResponse = await fetch(`/api/global-videos?_=${Date.now()}`);
+            if (globalVideosResponse.ok) {
+                const { globalVideos } = await globalVideosResponse.json();
+                Object.values(globalVideos).forEach(video => {
+                    if (video?.videoId) videoIds.add(video.videoId);
+                });
+            }
+
+            console.log('Videos to preload:', Array.from(videoIds));
+            this.totalVideosToPreload = videoIds.size;
+            this.loadedVideos = 0;
+
+            // Convert Set to Array and prioritize aerial video
+            const videoIdsArray = Array.from(videoIds);
+            const aerialVideoId = videoIdsArray.find(id => {
+                const asset = assets.find(a => a._id === id);
+                return asset?.name?.toLowerCase().includes('aerial');
+            });
+            
+            if (aerialVideoId) {
+                // Move aerial video to front of array
+                const index = videoIdsArray.indexOf(aerialVideoId);
+                videoIdsArray.splice(index, 1);
+                videoIdsArray.unshift(aerialVideoId);
+            }
+
+            // Preload videos in batches to prevent overwhelming the browser
+            const batchSize = 2; // Load 2 videos at a time
+            for (let i = 0; i < videoIdsArray.length; i += batchSize) {
+                const batch = videoIdsArray.slice(i, i + batchSize);
+                const batchPromises = batch.map(videoId => this.preloadVideo(videoId, assets, progressCallback));
+                await Promise.all(batchPromises);
+            }
+
+            console.log('Video preload completed. Successfully preloaded:', this.preloadedVideos.size, 'of', this.totalVideosToPreload, 'videos');
+            
+        } catch (error) {
+            console.error('Error during video preload:', error);
+            // Don't throw the error - allow initialization to continue
+            // Videos will be loaded on demand if preloading failed
+        }
+    }
+
+    // New method to handle individual video preloading
+    async preloadVideo(videoId, assets, progressCallback) {
+        const asset = assets.find(a => a._id === videoId);
+        if (!asset) {
+            console.warn(`Asset not found for video ID: ${videoId}`);
+            this.loadedVideos++;
+            if (progressCallback) {
+                progressCallback((this.loadedVideos / this.totalVideosToPreload) * 100);
+            }
+            return;
+        }
+
+        return new Promise((resolve) => {
+            let retryCount = 0;
+            const maxRetries = 5; // Increased from 3 to 5
+            const baseRetryDelay = 2000;
+            const maxRetryDelay = 15000; // Increased from 10000 to 15000
+
+            const getRetryDelay = (attempt) => {
+                const delay = Math.min(baseRetryDelay * Math.pow(2, attempt), maxRetryDelay);
+                // Add more jitter to prevent thundering herd
+                return delay + Math.random() * 2000;
+            };
+
+            const attemptPreload = () => {
+                console.log(`Attempting to preload video ${asset.name || videoId} (attempt ${retryCount + 1}/${maxRetries})`);
+                
+                const video = document.createElement('video');
+                video.preload = 'auto'; // Changed from 'metadata' to 'auto'
+                video.muted = true;
+                video.playsInline = true;
+                video.crossOrigin = 'anonymous';
+         
+                let loadTimeout;
+                let canPlayTimeout;
+                let stalledTimeout;
+                let isResolved = false;
+                let isStalled = false;
+                let hasLoadedMetadata = false;
+                let hasLoadedData = false;
+                let hasCanPlay = false;
+                let lastProgressTime = Date.now();
+                let noProgressTimeout;
+
+                const cleanup = () => {
+                    if (isResolved) return;
+                    clearTimeout(loadTimeout);
+                    clearTimeout(canPlayTimeout);
+                    clearTimeout(stalledTimeout);
+                    clearTimeout(noProgressTimeout);
+                    video.removeEventListener('loadedmetadata', loadHandler);
+                    video.removeEventListener('loadeddata', dataHandler);
+                    video.removeEventListener('canplay', canPlayHandler);
+                    video.removeEventListener('error', errorHandler);
+                    video.removeEventListener('stalled', stalledHandler);
+                    video.removeEventListener('progress', progressHandler);
+                    video.removeAttribute('src');
+                    video.load();
+                };
+
+                const dataHandler = () => {
+                    if (isResolved) return;
+                    console.log(`Loaded data for video: ${asset.name || videoId}`);
+                    hasLoadedData = true;
+                    checkReady();
+                };
+
+                const loadHandler = () => {
+                    if (isResolved) return;
+                    console.log(`Loaded metadata for video: ${asset.name || videoId}`);
+                    hasLoadedMetadata = true;
+                    checkReady();
+                };
+
+                const checkReady = () => {
+                    if (isResolved) return;
+                    
+                    // Only consider the video ready when we have both metadata and data
+                    if (hasLoadedMetadata && hasLoadedData && hasCanPlay) {
+                        console.log(`Video fully ready: ${asset.name || videoId}`);
+                        
+                        // Store the video in preloaded cache
+                        this.preloadedVideos.set(videoId, video);
+                        
+                        this.loadedVideos++;
+                        if (progressCallback) {
+                            progressCallback((this.loadedVideos / this.totalVideosToPreload) * 100);
+                        }
+                        isResolved = true;
+                        cleanup();
+                        resolve();
+                    }
+                };
+
+                const progressHandler = () => {
+                    if (isStalled) {
+                        console.log(`Video ${asset.name || videoId} resumed loading`);
+                        isStalled = false;
+                        clearTimeout(stalledTimeout);
+                        clearTimeout(noProgressTimeout);
+                    }
+                    lastProgressTime = Date.now();
+                };
+
+                const canPlayHandler = () => {
+                    if (isResolved) return;
+                    console.log(`Video can play: ${asset.name || videoId}`);
+                    hasCanPlay = true;
+                    clearTimeout(canPlayTimeout);
+                    checkReady();
+                };
+
+                const stalledHandler = () => {
+                    if (isResolved || isStalled) return;
+                    
+                    console.warn(`Video stalled during loading: ${asset.name || videoId}`);
+                    isStalled = true;
+                    
+                    // Check for no progress
+                    noProgressTimeout = setTimeout(() => {
+                        if (!isResolved && Date.now() - lastProgressTime > 10000) {
+                            console.warn(`No progress for 10s on stalled video: ${asset.name || videoId}`);
+                            cleanup();
+                            errorHandler(new Error('No progress on stalled video'));
+                        }
+                    }, 10000);
+
+                    // Increased stalled timeout
+                    stalledTimeout = setTimeout(() => {
+                        if (!isResolved) {
+                            console.warn(`Video still stalled after timeout: ${asset.name || videoId}`);
+                            cleanup();
+                            errorHandler(new Error('Video stalled during loading'));
+                        }
+                    }, 15000); // Increased from 10000 to 15000
+                };
+
+                const errorHandler = (e) => {
+                    if (isResolved) return;
+                    console.warn(`Error preloading video ${asset.name || videoId}:`, e);
+                    cleanup();
+
+                    if (retryCount < maxRetries) {
+                        retryCount++;
+                        const delay = getRetryDelay(retryCount);
+                        console.log(`Retrying preload for ${asset.name || videoId} in ${Math.round(delay/1000)}s (attempt ${retryCount + 1}/${maxRetries})`);
+                        setTimeout(attemptPreload, delay);
+                    } else {
+                        console.warn(`Failed to preload video ${asset.name || videoId} after ${maxRetries} attempts. Will load on demand.`);
+                        this.loadedVideos++;
+                        if (progressCallback) {
+                            progressCallback((this.loadedVideos / this.totalVideosToPreload) * 100);
+                        }
+                        isResolved = true;
+                        resolve();
+                    }
+                };
+
+                // Increased timeouts
+                loadTimeout = setTimeout(() => {
+                    if (!isResolved) {
+                        console.warn(`Timeout loading video ${asset.name || videoId}`);
+                        cleanup();
+                        errorHandler(new Error('Load timeout'));
+                    }
+                }, 90000); // Increased from 60000 to 90000
+
+                canPlayTimeout = setTimeout(() => {
+                    if (!isResolved) {
+                        console.warn(`Timeout waiting for canplay for ${asset.name || videoId}`);
+                        cleanup();
+                        errorHandler(new Error('Canplay timeout'));
+                    }
+                }, 120000); // Increased from 90000 to 120000
+
+                // Add event listeners
+                video.addEventListener('loadedmetadata', loadHandler);
+                video.addEventListener('loadeddata', dataHandler);
+                video.addEventListener('canplay', canPlayHandler);
+                video.addEventListener('error', errorHandler);
+                video.addEventListener('stalled', stalledHandler);
+                video.addEventListener('progress', progressHandler);
+
+                // Start loading
+                try {
+                    console.log(`Setting source for video ${asset.name || videoId}`);
+                    video.src = asset.url;
+                    video.load();
+                } catch (error) {
+                    console.warn(`Error setting video source for ${asset.name || videoId}:`, error);
+                    cleanup();
+                    errorHandler(error);
+                }
+            };
+
+            // Start first preload attempt
+            attemptPreload();
+        });
+    }
+
+    async fetchVideosForHotspot(hotspotId) {
+        try {
+            console.log('Fetching videos for hotspot:', hotspotId);
+            const videosUrl = `/api/hotspot-videos?houseId=${this.currentHouse}&hotspotId=${hotspotId}&_=${Date.now()}`;
+            console.log('Fetching videos from URL:', videosUrl);
+            
+            const videosResponse = await fetch(videosUrl);
+            if (!videosResponse.ok) {
+                console.error('Failed to load hotspot videos. Status:', videosResponse.status);
+                return null;
+            }
+            
+            const videosData = await videosResponse.json();
+            console.log('Received videos data:', JSON.stringify(videosData, null, 2));
+            
+            const { hotspotVideos } = videosData;
+            if (!hotspotVideos) {
+                console.error('No videos data in response');
+                return null;
+            }
+
+            // Get the dive-in video asset
+            if (hotspotVideos.diveIn?.videoId) {
+                const diveInAsset = this.assets.find(a => a._id === hotspotVideos.diveIn.videoId);
+                if (!diveInAsset) {
+                    console.error('Dive-in video not found in assets:', hotspotVideos.diveIn.videoId);
+                    return null;
+                }
+                hotspotVideos.diveIn = { ...hotspotVideos.diveIn, ...diveInAsset };
+            }
+
+            // Get the floor level video asset
+            if (hotspotVideos.floorLevel?.videoId) {
+                const floorLevelAsset = this.assets.find(a => a._id === hotspotVideos.floorLevel.videoId);
+                if (floorLevelAsset) {
+                    hotspotVideos.floorLevel = { ...hotspotVideos.floorLevel, ...floorLevelAsset };
+                }
+            }
+
+            // Get the zoom out video asset
+            if (hotspotVideos.zoomOut?.videoId) {
+                const zoomOutAsset = this.assets.find(a => a._id === hotspotVideos.zoomOut.videoId);
+                if (zoomOutAsset) {
+                    hotspotVideos.zoomOut = { ...hotspotVideos.zoomOut, ...zoomOutAsset };
+                }
+            }
+
+            return hotspotVideos;
+        } catch (error) {
+            console.error('Error fetching videos for hotspot:', error);
+            return null;
+        }
+    }
+
+    updateStateIndicator(message) {
+        if (this.stateIndicator) {
+            this.stateIndicator.textContent = message;
+        } else {
+            console.warn('State indicator element not found');
+        }
+    }
+
+    async showAerialView() {
+        try {
+            // Hide all other views
+            if (this.transitionView) this.transitionView.style.display = 'none';
+            if (this.floorLevelView) this.floorLevelView.style.display = 'none';
+            
+            // Show aerial view
+            if (this.aerialView) {
+                this.aerialView.style.display = 'block';
+                // Ensure aerial video is playing
+                if (this.aerialVideo) {
+                    try {
+                        await this.aerialVideo.play();
+                    } catch (error) {
+                        console.error('Error playing aerial video:', error);
+                        // Try one more time after a short delay
+                        setTimeout(async () => {
+                            try {
+                                await this.aerialVideo.play();
+                            } catch (retryError) {
+                                console.error('Error playing aerial video after retry:', retryError);
+                            }
+                        }, 1000);
+                    }
+                }
+            }
+            
+            // Show house selector
+            if (this.houseSelector) {
+                this.houseSelector.style.display = 'block';
+            }
+            
+            // Update state indicator
+            this.updateStateIndicator('Current State: Aerial View');
+            
+            // Reset current hotspot
+            this.currentHotspot = null;
+        } catch (error) {
+            console.error('Error showing aerial view:', error);
+        }
+    }
 }
 
-// Initialize the HotspotManager when the DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
+// Update the initialization to prevent multiple instances
+if (!window.hotspotManager) {
     window.hotspotManager = new HotspotManager();
-    
-    // Add event listener for house selection
-    if (window.hotspotManager.houseSelector) {
-        window.hotspotManager.houseSelector.addEventListener('change', (e) => {
-            window.hotspotManager.currentHouse = parseInt(e.target.value);
-            window.hotspotManager.loadHotspots();
-        });
-    }
-    
-    // Add event listener for video end
-    if (window.hotspotManager.floorLevelVideo) {
-        window.hotspotManager.floorLevelVideo.addEventListener('ended', () => {
-            window.hotspotManager.handleVideoEnd();
-        });
-    }
-    
-    // Add event listener for window focus to check for updates
-    if (window) {
-        window.addEventListener('focus', () => {
-            window.hotspotManager.checkForUpdates();
-        });
-    }
-});
+}

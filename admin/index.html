@@ -470,12 +470,12 @@
                             </div>
 
                             <!-- Upload Modal -->
-                            <div class="modal fade" id="uploadAssetModal" tabindex="-1">
-                                <div class="modal-dialog">
+                            <div class="modal fade" id="uploadAssetModal" tabindex="-1" role="dialog" aria-labelledby="uploadAssetModalLabel" aria-modal="true">
+                                <div class="modal-dialog" role="document">
                                     <div class="modal-content">
                                         <div class="modal-header">
-                                            <h5 class="modal-title">Upload New Asset</h5>
-                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            <h5 class="modal-title" id="uploadAssetModalLabel">Upload Asset</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                         </div>
                                         <div class="modal-body">
                                             <form id="uploadAssetForm">
@@ -483,6 +483,7 @@
                                                     <label for="assetType" class="form-label">Asset Type</label>
                                                     <select class="form-select" id="assetType" name="type" required>
                                                         <option value="aerial">Aerial Map</option>
+                                                        <option value="transition">Transition</option>
                                                         <option value="diveIn">Dive In</option>
                                                         <option value="floorLevel">Floor Level</option>
                                                         <option value="zoomOut">Zoom Out</option>
@@ -496,7 +497,7 @@
                                         </div>
                                         <div class="modal-footer">
                                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                            <button type="button" class="btn btn-danger" id="saveAssetBtn">Upload</button>
+                                            <button type="button" class="btn btn-danger" id="saveAssetBtn">Save Asset</button>
                                         </div>
                                     </div>
                                 </div>
@@ -522,28 +523,98 @@
                     </div>
                 </div>
 
-                <!-- Video Playlists Section -->
-                <div id="playlistsSection" class="content-section" style="display: none;">
-                    <div class="row">
-                        <div class="col-md-12">
-                            <div class="card bg-dark mb-4">
-                                <div class="card-body">
-                                    <h5 class="card-title">Global Videos</h5>
+                <!-- Edit Asset Modal -->
+                <div class="modal fade" id="editAssetModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Edit Asset</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="editAssetForm">
+                                    <input type="hidden" id="editAssetId">
                                     <div class="mb-3">
-                                        <label class="form-label">Aerial Video</label>
-                                        <select class="form-select" id="globalAerialSelect">
-                                            <option value="">Select Video</option>
+                                        <label for="editAssetType" class="form-label">Asset Type</label>
+                                        <select class="form-select" id="editAssetType" name="type" required>
+                                            <option value="aerial">Aerial Map</option>
+                                            <option value="transition">Transition</option>
+                                            <option value="diveIn">Dive In</option>
+                                            <option value="floorLevel">Floor Level</option>
+                                            <option value="zoomOut">Zoom Out</option>
                                         </select>
                                     </div>
-                                </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-danger" id="saveEditAssetBtn">Save Changes</button>
                             </div>
                         </div>
                     </div>
-                    <div class="row">
-                        <div class="col-md-12">
-                            <h5 class="mb-3">Primary Hotspot Sequences</h5>
-                            <div id="hotspotPlaylistsContainer">
-                                <!-- Hotspot playlists will be dynamically added here -->
+                </div>
+
+                <!-- Playlists Section -->
+                <div id="playlistsSection" class="section" style="display: none;">
+                    <div class="container-fluid">
+                        <div class="row">
+                            <!-- Global Videos Section -->
+                            <div class="col-md-12 mb-4">
+                                <div class="card bg-dark">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">Global Videos</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label class="form-label">KOP Aerial Video</label>
+                                                    <select class="form-select" id="kopAerialSelect">
+                                                        <option value="">Select Video</option>
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">DALLAS Aerial Video</label>
+                                                    <select class="form-select" id="dallasAerialSelect">
+                                                        <option value="">Select Video</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label class="form-label">Transition Video (KOP to DALLAS)</label>
+                                                    <select class="form-select" id="kopToDallasSelect">
+                                                        <option value="">Select Video</option>
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">Transition Video (DALLAS to KOP)</label>
+                                                    <select class="form-select" id="dallasToKopSelect">
+                                                        <option value="">Select Video</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- House Hotspot Videos Section -->
+                            <div class="col-md-12">
+                                <div class="card bg-dark">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <h5 class="mb-0">House Hotspot Videos</h5>
+                                        <select class="form-select w-auto" id="playlistHouseSelector">
+                                            <option value="1">KOP</option>
+                                            <option value="2">DALLAS</option>
+                                        </select>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="hotspotPlaylistsContainer">
+                                            <!-- Hotspot videos will be loaded here -->
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -597,6 +668,16 @@
             </div>
             <div class="toast-body">
                 Asset uploaded successfully!
+            </div>
+        </div>
+        <!-- Add notification toast -->
+        <div id="notificationToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto">Notification</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">
+                Operation completed successfully!
             </div>
         </div>
     </div>

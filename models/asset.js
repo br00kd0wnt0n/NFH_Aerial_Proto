@@ -4,7 +4,7 @@ const assetSchema = new mongoose.Schema({
     name: String,
     type: {
         type: String,
-        enum: ['aerial', 'diveIn', 'zoomOut', 'hotspot', 'floorLevel'],
+        enum: ['aerial', 'diveIn', 'zoomOut', 'hotspot', 'floorLevel', 'transition'],
         required: true
     },
     url: String,
