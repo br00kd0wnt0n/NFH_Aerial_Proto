@@ -17,6 +17,17 @@ const upload = multer();
 // Set environment
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Add this near the top of the file, after the requires but before any route definitions
+console.log('Server Environment Variables:');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('PORT:', process.env.PORT);
+console.log('AWS Variables Present:', {
+    AWS_ACCESS_KEY_ID: !!process.env.AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY: !!process.env.AWS_SECRET_ACCESS_KEY,
+    AWS_REGION: !!process.env.AWS_REGION,
+    AWS_BUCKET_NAME: !!process.env.AWS_BUCKET_NAME
+});
+
 // Security headers middleware
 app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
