@@ -18,28 +18,38 @@ async function updateAssetTypes() {
             console.log(`  Name: ${asset.name}`);
             console.log(`  Current Type: ${asset.type}`);
             
-            const filenameLower = asset.name.toLowerCase();
-            let newType = asset.type; // Default to current type
+            // Always normalize type to lowercase
+            let newType = asset.type ? asset.type.toLowerCase() : '';
+            const filenameLower = asset.name ? asset.name.toLowerCase() : '';
 
-            // Determine type based on filename patterns
+            // Determine type based on filename patterns if needed
             if (filenameLower.includes('dive') || filenameLower.includes('transition')) {
-                newType = 'diveIn';
+                newType = 'divein';
             } else if (filenameLower.includes('floor') || filenameLower.includes('level')) {
-                newType = 'floorLevel';
+                newType = 'floorlevel';
             } else if (filenameLower.includes('zoom') || filenameLower.includes('out')) {
-                newType = 'zoomOut';
+                newType = 'zoomout';
             } else if (filenameLower.includes('map') || filenameLower.includes('aerial')) {
                 newType = 'aerial';
             }
 
-            // Only update if type has changed
-            if (newType !== asset.type) {
+            // Always update type if not normalized
+            if (asset.type !== newType) {
                 console.log(`  Updating type from ${asset.type} to ${newType}`);
                 asset.type = newType;
+            }
+
+            // Skip and warn if missing houseId
+            if (!asset.houseId) {
+                console.warn(`  Skipping asset ${asset._id} (${asset.name}) - missing houseId`);
+                continue;
+            }
+
+            try {
                 await asset.save();
                 console.log(`  Updated asset in DB: ${asset._id}`);
-            } else {
-                console.log(`  Type already correct: ${asset.type}`);
+            } catch (err) {
+                console.error(`  Failed to update asset ${asset._id}:`, err.message);
             }
         }
 
@@ -51,4 +61,5 @@ async function updateAssetTypes() {
     }
 }
 
+// Run the update
 updateAssetTypes(); 

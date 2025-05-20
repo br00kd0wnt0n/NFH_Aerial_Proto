@@ -469,6 +469,148 @@
                                 </select>
                             </div>
 
+                            <!-- Asset Upload Container -->
+                            <div id="assetUploadContainer" class="row">
+                                <!-- Aerial Video Upload -->
+                                <div class="col-md-6 mb-4">
+                                    <div class="card bg-dark">
+                                        <div class="card-body">
+                                            <h6 class="card-title">Aerial Video</h6>
+                                            <div class="upload-area" id="aerialUploadArea">
+                                                <p class="mb-2">Upload aerial video</p>
+                                                <input type="file" class="d-none" id="aerialUpload" accept="video/*">
+                                                <button class="btn btn-outline-light" onclick="document.getElementById('aerialUpload').click()">
+                                                    Select Video
+                                                </button>
+                                            </div>
+                                            <div class="progress d-none" id="aerialUploadProgress">
+                                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                            </div>
+                                            <div class="current-asset mt-2" id="aerialCurrentAsset">
+                                                <!-- Current asset will be shown here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Transition Video Upload -->
+                                <div class="col-md-6 mb-4">
+                                    <div class="card bg-dark">
+                                        <div class="card-body">
+                                            <h6 class="card-title">Transition Video</h6>
+                                            <div class="upload-area" id="transitionUploadArea">
+                                                <p class="mb-2">Upload transition video</p>
+                                                <input type="file" class="d-none" id="transitionUpload" accept="video/*">
+                                                <button class="btn btn-outline-light" onclick="document.getElementById('transitionUpload').click()">
+                                                    Select Video
+                                                </button>
+                                            </div>
+                                            <div class="progress d-none" id="transitionUploadProgress">
+                                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                            </div>
+                                            <div class="current-asset mt-2" id="transitionCurrentAsset">
+                                                <!-- Current asset will be shown here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Dive In Video Upload -->
+                                <div class="col-md-6 mb-4">
+                                    <div class="card bg-dark">
+                                        <div class="card-body">
+                                            <h6 class="card-title">Dive In Video</h6>
+                                            <div class="upload-area" id="diveInUploadArea">
+                                                <p class="mb-2">Upload dive in video</p>
+                                                <input type="file" class="d-none" id="diveInUpload" accept="video/*">
+                                                <button class="btn btn-outline-light" onclick="document.getElementById('diveInUpload').click()">
+                                                    Select Video
+                                                </button>
+                                            </div>
+                                            <div class="progress d-none" id="diveInUploadProgress">
+                                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                            </div>
+                                            <div class="current-asset mt-2" id="diveInCurrentAsset">
+                                                <!-- Current asset will be shown here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Floor Level Video Upload -->
+                                <div class="col-md-6 mb-4">
+                                    <div class="card bg-dark">
+                                        <div class="card-body">
+                                            <h6 class="card-title">Floor Level Video</h6>
+                                            <div class="upload-area" id="floorLevelUploadArea">
+                                                <p class="mb-2">Upload floor level video</p>
+                                                <input type="file" class="d-none" id="floorLevelUpload" accept="video/*">
+                                                <button class="btn btn-outline-light" onclick="document.getElementById('floorLevelUpload').click()">
+                                                    Select Video
+                                                </button>
+                                            </div>
+                                            <div class="progress d-none" id="floorLevelUploadProgress">
+                                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                            </div>
+                                            <div class="current-asset mt-2" id="floorLevelCurrentAsset">
+                                                <!-- Current asset will be shown here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Zoom Out Video Upload -->
+                                <div class="col-md-6 mb-4">
+                                    <div class="card bg-dark">
+                                        <div class="card-body">
+                                            <h6 class="card-title">Zoom Out Video</h6>
+                                            <div class="upload-area" id="zoomOutUploadArea">
+                                                <p class="mb-2">Upload zoom out video</p>
+                                                <input type="file" class="d-none" id="zoomOutUpload" accept="video/*">
+                                                <button class="btn btn-outline-light" onclick="document.getElementById('zoomOutUpload').click()">
+                                                    Select Video
+                                                </button>
+                                            </div>
+                                            <div class="progress d-none" id="zoomOutUploadProgress">
+                                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                            </div>
+                                            <div class="current-asset mt-2" id="zoomOutCurrentAsset">
+                                                <!-- Current asset will be shown here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- House Videos Section -->
+                            <div id="houseVideosSection" class="mt-4">
+                                <div class="card bg-dark">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">House Videos</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label class="form-label">Aerial Video</label>
+                                                    <select class="form-select" id="aerialVideoSelect">
+                                                        <option value="">Select Video</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label class="form-label">Transition Video</label>
+                                                    <select class="form-select" id="transitionVideoSelect">
+                                                        <option value="">Select Video</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Upload Modal -->
                             <div class="modal fade" id="uploadAssetModal" tabindex="-1" role="dialog" aria-labelledby="uploadAssetModalLabel" aria-modal="true">
                                 <div class="modal-dialog" role="document">
