@@ -10,10 +10,7 @@ const assetSchema = new mongoose.Schema({
     url: String,
     houseId: {
         type: Number,
-        required: function() {
-            // Only require houseId for non-global videos
-            return this.type !== 'aerial' && this.type !== 'transition';
-        }
+        required: true  // Always require houseId
     },
     hotspotId: {
         type: String,

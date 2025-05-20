@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let assets = []; // Add global assets array
     let isInitializing = false; // Add flag to prevent concurrent initialization
     let currentGlobalVideos = null; // Add variable to store current global videos state
+    let currentHouseVideos = null; // Add variable to store current house videos state
 
     // Initialize DOM elements
     const hotspotModal = document.getElementById('hotspotModal');
@@ -355,26 +356,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         isInitializing = true;
         try {
-            // Load global videos and assets in parallel
-            const [globalVideosResponse, assetsResponse] = await Promise.all([
-                fetch(`/api/global-videos?_=${Date.now()}`),
+            // Load house videos and assets in parallel
+            const [houseVideosResponse, houseAssetsResponse] = await Promise.all([
+                fetch(`/api/house-videos?houseId=${houseId}&_=${Date.now()}`),
                 fetch(`/api/assets?houseId=${houseId}&_=${Date.now()}`)
             ]);
 
-            if (!globalVideosResponse.ok) throw new Error('Failed to load global videos');
-            if (!assetsResponse.ok) throw new Error('Failed to load assets');
+            if (!houseVideosResponse.ok) throw new Error('Failed to load house videos');
+            if (!houseAssetsResponse.ok) throw new Error('Failed to load house assets');
 
-            const { globalVideos } = await globalVideosResponse.json();
-            const { assets: houseAssets } = await assetsResponse.json();
+            const { houseVideo } = await houseVideosResponse.json();
+            const { assets: houseAssets } = await houseAssetsResponse.json();
             
-            // Store assets globally for use in other functions
+            // Store house assets
             assets = houseAssets;
             
-            // Store current global videos state
-            currentGlobalVideos = globalVideos;
+            // Store current house videos state
+            currentHouseVideos = houseVideo;
             
-            // Update the global videos UI
-            updateGlobalVideosUI(globalVideos);
+            // Update the house videos UI
+            updateHouseVideosUI(houseVideo);
             
             // Load hotspot videos for the current house
             const hotspotVideosResponse = await fetch(`/api/hotspot-videos?houseId=${houseId}&_=${Date.now()}`);
@@ -453,10 +454,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function updateGlobalVideo(type, videoId) {
         console.log("updateGlobalVideo called with type:", type, "videoId:", videoId);
         try {
-            const payload = { type, videoId };
+            // Get the current global videos state
+            const currentState = currentGlobalVideos || {};
+            
+            // Create the update payload
+            const payload = {
+                globalVideos: {
+                    ...currentState,
+                    [type]: videoId ? { videoId } : null
+                }
+            };
+
             const response = await fetch('/api/global-videos', {
                 method: 'POST',
-                
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
@@ -487,6 +497,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         preview.style.display = 'block';
                     }
                 }
+                
+                // Update current state
+                currentGlobalVideos = data.globalVideos;
                 
                 // Show success notification
                 showNotification(`Global video updated successfully for ${type}`, 'success');

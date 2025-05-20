@@ -384,48 +384,52 @@ app.get('/api/global-videos', async (req, res) => {
 // Update global videos
 app.post('/api/global-videos', async (req, res) => {
     try {
-        const { type, videoId } = req.body;
+        const { globalVideos } = req.body;
         
-        if (!type || !videoId) {
-            console.error('Missing required fields:', { type, videoId });
-            return res.status(400).json({ error: 'Missing required fields' });
+        if (!globalVideos || typeof globalVideos !== 'object') {
+            console.error('Invalid request data:', req.body);
+            return res.status(400).json({ error: 'Invalid request data' });
         }
 
-        console.log('Updating global video:', { type, videoId });
-
-        // Get the asset to verify it exists and get its name
-        const asset = await Asset.findById(videoId);
-        if (!asset) {
-            console.error('Video asset not found:', videoId);
-            return res.status(404).json({ error: 'Video asset not found' });
+        // Get the single global video document
+        let globalVideo = await GlobalVideos.findOne();
+        if (!globalVideo) {
+            globalVideo = new GlobalVideos({});
         }
 
-        // Update or create the global video entry
-        const update = {
-            $set: {
-                [`globalVideos.${type}`]: {
-                    videoId,
-                    name: asset.name,
-                    url: asset.url,
-                    updatedAt: new Date()
-                }
+        // Update each video type
+        for (const [type, video] of Object.entries(globalVideos)) {
+            if (!video || !video.videoId) {
+                // If no video selected, set to null
+                globalVideo[type] = { videoId: null };
+                continue;
             }
-        };
 
-        console.log('Update operation:', update);
+            // Verify the asset exists
+            const asset = await Asset.findById(video.videoId);
+            if (!asset) {
+                console.error('Video asset not found:', video.videoId);
+                return res.status(404).json({ error: `Video asset not found for ${type}` });
+            }
 
-        // Use upsert to create if doesn't exist
-        const result = await GlobalVideos.findOneAndUpdate(
-            {}, // No query - we want the single global video document
-            update,
-            { upsert: true, new: true }
-        );
+            // Update the global video entry
+            globalVideo[type] = {
+                videoId: video.videoId,
+                name: asset.name,
+                url: asset.url,
+                updatedAt: new Date()
+            };
+        }
 
-        console.log('Updated global video result:', result);
-        res.json(result);
+        // Save the updated document
+        await globalVideo.save();
+        console.log('Updated global videos:', globalVideo);
+
+        // Return the updated document
+        res.json({ globalVideos: globalVideo.toObject() });
     } catch (error) {
-        console.error('Error updating global video:', error);
-        res.status(500).json({ error: 'Failed to update global video', details: error.message });
+        console.error('Error updating global videos:', error);
+        res.status(500).json({ error: 'Failed to update global videos', details: error.message });
     }
 });
 

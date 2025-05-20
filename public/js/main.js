@@ -308,20 +308,7 @@ async function initializeApplication() {
 // Update house content loading
 async function loadHouseContent(houseId) {
     // Only check initialization for subsequent house switches
-    if (isInitialized) {
-        console.log('[DEBUG] Checking initialization state...');
-        const manager = window.hotspotManager;
-        if (!manager || !manager.aerialVideo || !manager.transitionVideo || !manager.aerialView || !manager.transitionView) {
-            console.error('[DEBUG] Required video elements not found:', {
-                transitionView: !!manager?.transitionView,
-                aerialView: !!manager?.aerialView,
-                transitionVideo: !!manager?.transitionVideo
-            });
-            throw new Error('Required video elements not found');
-        }
-    }
-
-    const oldHouseId = parseInt(currentHouseId);
+    const oldHouseId = currentHouseId ? parseInt(currentHouseId) : null;
     console.log('[DEBUG] Loading house content:', { oldHouseId, newHouseId: houseId });
 
     // If we're actually switching houses (not initial load), play transition video
@@ -329,39 +316,29 @@ async function loadHouseContent(houseId) {
         try {
             console.log('[DEBUG] Switching houses, attempting to play transition video');
             
-            // Get global videos
-            const globalVideosResponse = await fetch(`/api/global-videos?_=${Date.now()}`);
-            if (!globalVideosResponse.ok) throw new Error('Failed to load global videos');
-            const { globalVideos } = await globalVideosResponse.json();
-            console.log('[DEBUG] Loaded global videos:', globalVideos);
+            // Get transition video for the current house
+            const assetsResponse = await fetch(`/api/assets?houseId=${oldHouseId}&type=transition&_=${Date.now()}`);
+            if (!assetsResponse.ok) throw new Error('Failed to load transition video');
+            const assetsData = await assetsResponse.json();
+            
+            // Find transition video for this house
+            const transitionAsset = assetsData.assets.find(asset => 
+                asset.type === 'transition' && 
+                asset.houseId === oldHouseId
+            );
 
-            // Determine which transition video to play
-            const transitionKey = oldHouseId === 1 ? 'transitionKopToDallas' : 'transitionDallasToKop';
-            console.log('[DEBUG] Using transition key:', transitionKey);
-            const transitionVideoId = globalVideos[transitionKey]?.videoId;
-            console.log('[DEBUG] Transition video ID:', transitionVideoId);
-
-            if (!transitionVideoId) {
-                console.log('[DEBUG] No transition video found, skipping transition');
+            if (!transitionAsset) {
+                console.log('[DEBUG] No transition video found for house', oldHouseId, 'skipping transition');
                 // Skip transition and load new house directly
                 await loadNewHouse(houseId);
                 return;
             }
 
-            // Get the transition video asset
-            const assetsResponse = await fetch(`/api/assets?houseId=${oldHouseId}&_=${Date.now()}`);
-            if (!assetsResponse.ok) throw new Error('Failed to load assets');
-            const assetsData = await assetsResponse.json();
-            const transitionAsset = assetsData.assets.find(a => a._id === transitionVideoId);
-
-            if (!transitionAsset) {
-                console.error('[DEBUG] Transition video asset not found:', transitionVideoId);
-                throw new Error('Transition video asset not found');
-            }
-
             // Play transition video
             const manager = window.hotspotManager;
-            if (!manager) throw new Error('Hotspot manager not initialized');
+            if (!manager) {
+                throw new Error('Hotspot manager not initialized');
+            }
 
             // Show transition view and play video
             manager.transitionView.style.display = 'block';
@@ -373,37 +350,30 @@ async function loadHouseContent(houseId) {
             transitionVideo.loop = false;
             transitionVideo.muted = true;
             transitionVideo.playsInline = true;
-            transitionVideo.autoplay = true;
 
-            // Wait for transition video to end
-            await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    console.log('[DEBUG] Transition video timeout, proceeding to new house');
-                    resolve();
-                }, 10000); // 10 second timeout
+            try {
+                await transitionVideo.play();
+                console.log('[DEBUG] Playing transition video');
 
-                transitionVideo.onended = () => {
-                    clearTimeout(timeout);
-                    console.log('[DEBUG] Transition video ended');
-                    resolve();
-                };
+                // Wait for transition video to end
+                await new Promise((resolve) => {
+                    transitionVideo.onended = resolve;
+                });
 
-                transitionVideo.onerror = (error) => {
-                    clearTimeout(timeout);
-                    console.error('[DEBUG] Transition video error:', error);
-                    reject(new Error('Transition video failed to play'));
-                };
-            });
-
-            // Load new house after transition
-            await loadNewHouse(houseId);
+                console.log('[DEBUG] Transition video ended, loading new house');
+                await loadNewHouse(houseId);
+            } catch (error) {
+                console.error('[DEBUG] Error playing transition video:', error);
+                // If transition fails, just load the new house
+                await loadNewHouse(houseId);
+            }
         } catch (error) {
             console.error('[DEBUG] Error during house transition:', error);
-            // If transition fails, try to load new house directly
+            // If anything fails, just load the new house
             await loadNewHouse(houseId);
         }
     } else {
-        // Initial load or same house, just load content
+        // Just load the house directly if it's the same house
         await loadNewHouse(houseId);
     }
 }
