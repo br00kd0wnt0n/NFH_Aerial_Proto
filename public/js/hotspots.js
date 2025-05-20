@@ -45,6 +45,9 @@ class HotspotManager {
 
         // Start preloading videos and wait for completion
         this.initializeAndPreload();
+
+        this.isPlaying = false;  // Add play state tracking
+        this.playPromise = null; // Add promise to track play operations
     }
     
     initializeVideoElements() {
@@ -253,15 +256,15 @@ class HotspotManager {
     }
     
     // Store current video state
-    storeVideoState() {
+    async storeVideoState() {
         if (this.aerialVideo) {
             this._storedVideoState = {
                 currentTime: this.aerialVideo.currentTime,
                 isPlaying: !this.aerialVideo.paused,
                 src: this.aerialVideo.src
             };
-            // Pause the video when tab is hidden
-            this.aerialVideo.pause();
+            // Pause the video when tab is hidden using safe pause
+            await this.safePause(this.aerialVideo);
         }
     }
 
@@ -273,7 +276,7 @@ class HotspotManager {
                 this.aerialVideo.currentTime = this._storedVideoState.currentTime;
                 if (this._storedVideoState.isPlaying) {
                     try {
-                        await this.aerialVideo.play();
+                        await this.safePlay(this.aerialVideo);
                     } catch (error) {
                         console.error('Error restoring video playback:', error);
                     }
@@ -1847,16 +1850,16 @@ class HotspotManager {
             this.isPreloading = false;
             this.stateIndicator.textContent = 'Current State: Aerial View';
             
-            // Start aerial video playback
+            // Start aerial video playback using safe play
             if (this.aerialVideo) {
                 try {
-                    await this.aerialVideo.play();
+                    await this.safePlay(this.aerialVideo);
                 } catch (error) {
                     console.error('Error playing aerial video:', error);
                     // Try one more time after a short delay
                     setTimeout(async () => {
                         try {
-                            await this.aerialVideo.play();
+                            await this.safePlay(this.aerialVideo);
                         } catch (retryError) {
                             console.error('Error playing aerial video after retry:', retryError);
                         }
@@ -1869,10 +1872,10 @@ class HotspotManager {
             // Continue initialization even if there are errors
             this.isPreloading = false;
             
-            // Try to start aerial video anyway
+            // Try to start aerial video anyway using safe play
             if (this.aerialVideo) {
                 try {
-                    await this.aerialVideo.play();
+                    await this.safePlay(this.aerialVideo);
                 } catch (playError) {
                     console.error('Error playing aerial video:', playError);
                 }
@@ -2260,6 +2263,64 @@ class HotspotManager {
             this.currentHotspot = null;
         } catch (error) {
             console.error('Error showing aerial view:', error);
+        }
+    }
+
+    // Add new method to safely play video
+    async safePlay(video) {
+        if (!video) return;
+        
+        // If we're already playing, don't try to play again
+        if (this.isPlaying) return;
+        
+        // If there's an ongoing play operation, wait for it
+        if (this.playPromise) {
+            try {
+                await this.playPromise;
+            } catch (error) {
+                console.warn('Previous play operation failed:', error);
+            }
+        }
+        
+        try {
+            this.isPlaying = true;
+            this.playPromise = video.play();
+            await this.playPromise;
+        } catch (error) {
+            console.error('Error playing video:', error);
+            this.isPlaying = false;
+            this.playPromise = null;
+            throw error;
+        } finally {
+            if (this.playPromise === video.play()) {
+                this.playPromise = null;
+            }
+        }
+    }
+
+    // Add new method to safely pause video
+    async safePause(video) {
+        if (!video) return;
+        
+        // If we're not playing, nothing to pause
+        if (!this.isPlaying) return;
+        
+        // If there's an ongoing play operation, wait for it
+        if (this.playPromise) {
+            try {
+                await this.playPromise;
+            } catch (error) {
+                console.warn('Previous play operation failed:', error);
+            }
+        }
+        
+        try {
+            video.pause();
+            this.isPlaying = false;
+            this.playPromise = null;
+        } catch (error) {
+            console.error('Error pausing video:', error);
+            throw error;
         }
     }
 }
