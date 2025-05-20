@@ -227,13 +227,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load playlists from server
     async function loadPlaylists(houseId) {
         try {
+            console.log('Loading playlists for house:', houseId);
             const response = await fetch(`/api/playlists?houseId=${houseId}&_=${Date.now()}`);
-            if (!response.ok) throw new Error('Failed to load playlists');
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to load playlists');
+            }
             const data = await response.json();
             console.log('Raw playlist data:', data);
             return data.playlists || {};
         } catch (error) {
             console.error('Error loading playlists:', error);
+            showError('Error loading playlists: ' + error.message);
             return {};
         }
     }
@@ -517,7 +522,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Save playlists
     async function savePlaylists(houseId, playlists) {
         try {
-            console.log('Saving playlists:', playlists);
+            console.log('Saving playlists:', {
+                houseId,
+                playlists
+            });
+            
             const response = await fetch(`/api/playlists?houseId=${houseId}&_=${Date.now()}`, {
                 method: 'POST',
                 headers: {
@@ -1832,6 +1841,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Update playlist UI
     function updatePlaylistUI(playlists) {
         console.log('Updating playlist UI with playlists:', playlists);
+        console.log('Current playlist house:', currentPlaylistHouse);
+        console.log('Current asset house:', currentAssetHouse);
         
         // Update hotspot playlists
         const hotspotPlaylistsContainer = document.getElementById('hotspotPlaylistsContainer');
@@ -1849,9 +1860,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const floorLevelVideos = assets.filter(asset => asset.type === 'floorLevel' && asset.houseId === currentAssetHouse);
         const zoomOutVideos = assets.filter(asset => asset.type === 'zoomOut' && asset.houseId === currentAssetHouse);
         
+        console.log('Available videos for playlists:', {
+            diveIn: diveInVideos,
+            floorLevel: floorLevelVideos,
+            zoomOut: zoomOutVideos
+        });
+        
         // Create playlist UI for each primary hotspot
         hotspotPlaylistsContainer.innerHTML = primaryHotspots.map(hotspot => {
-            const hotspotPlaylists = playlists.hotspots[hotspot._id] || {};
+            const hotspotPlaylists = playlists[hotspot._id] || {};
             console.log(`Creating playlist UI for hotspot ${hotspot._id}:`, hotspotPlaylists);
             
             return `
@@ -1927,15 +1944,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Update hotspot playlist
     async function updateHotspotPlaylist(hotspotId, type, videoId) {
         try {
+            console.log('Updating playlist for:', {
+                hotspotId,
+                type,
+                videoId,
+                currentPlaylistHouse
+            });
+
             const playlists = await loadPlaylists(currentPlaylistHouse);
-            console.log('Current playlists:', playlists);
+            console.log('Current playlists before update:', playlists);
             
             // Initialize hotspot playlists if they don't exist
-            if (!playlists.hotspots) {
-                playlists.hotspots = {};
-            }
-            if (!playlists.hotspots[hotspotId]) {
-                playlists.hotspots[hotspotId] = {
+            if (!playlists[hotspotId]) {
+                playlists[hotspotId] = {
                     diveIn: { videoId: null },
                     floorLevel: { videoId: null },
                     zoomOut: { videoId: null }
@@ -1943,18 +1964,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             // Update the specific playlist
-            playlists.hotspots[hotspotId][type] = { videoId };
+            playlists[hotspotId][type] = { videoId };
 
             // Save updated playlists
-            await savePlaylists(currentPlaylistHouse, playlists);
+            const result = await savePlaylists(currentPlaylistHouse, playlists);
+            console.log('Save playlists result:', result);
             
-            // Update UI
-            updatePlaylistUI(playlists);
+            // Update UI with the result from the server
+            updatePlaylistUI(result.playlists || playlists);
 
-            console.log(`Updated ${type} playlist for hotspot ${hotspotId}`);
+            showSuccess(`Updated ${type} playlist for hotspot ${hotspotId}`);
         } catch (error) {
             console.error('Error updating playlist:', error);
-            alert('Failed to update playlist. Please try again.');
+            showError('Failed to update playlist: ' + error.message);
         }
     }
 

@@ -23,6 +23,7 @@ const path = require('path');
 const multer = require('multer');
 const assetRoutes = require('./routes/assets');
 const hotspotRoutes = require('./routes/hotspots');
+const playlistRoutes = require('./routes/playlists');
 
 // Import models - use existing models from routes
 const Asset = mongoose.models.Asset || require('./models/asset');
@@ -431,6 +432,7 @@ app.post('/api/global-videos', async (req, res) => {
 // Asset and hotspot routes
 app.use('/api/assets', assetRoutes);
 app.use('/api/hotspots', hotspotRoutes);
+app.use('/api/playlists', playlistRoutes);
 
 // Get assets endpoint
 app.get('/api/assets', async (req, res) => {
