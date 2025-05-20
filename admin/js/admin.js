@@ -1870,11 +1870,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('Primary hotspots for playlists:', primaryHotspots);
         
         // Get available videos for the asset house
-        const diveInVideos = assets.filter(asset => asset.type === 'diveIn' && asset.houseId === currentAssetHouse);
-        const floorLevelVideos = assets.filter(asset => asset.type === 'floorLevel' && asset.houseId === currentAssetHouse);
-        const zoomOutVideos = assets.filter(asset => asset.type === 'zoomOut' && asset.houseId === currentAssetHouse);
+        const aerialVideos = assets.filter(asset => 
+            asset.type === 'aerial' && 
+            asset.houseId === currentAssetHouse
+        );
+        const transitionVideos = assets.filter(asset => 
+            asset.type === 'transition' && 
+            asset.houseId === currentAssetHouse
+        );
+        const diveInVideos = assets.filter(asset => 
+            asset.type === 'diveIn' && 
+            asset.houseId === currentAssetHouse
+        );
+        const floorLevelVideos = assets.filter(asset => 
+            asset.type === 'floorLevel' && 
+            asset.houseId === currentAssetHouse
+        );
+        const zoomOutVideos = assets.filter(asset => 
+            asset.type === 'zoomOut' && 
+            asset.houseId === currentAssetHouse
+        );
         
         console.log('Available videos for playlists:', {
+            aerial: aerialVideos,
+            transition: transitionVideos,
             diveIn: diveInVideos,
             floorLevel: floorLevelVideos,
             zoomOut: zoomOutVideos
@@ -1889,6 +1908,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="card bg-dark mb-3">
                     <div class="card-body">
                         <h5 class="card-title">${hotspot.title}</h5>
+                        <div class="mb-3">
+                            <label class="form-label">Aerial Video</label>
+                            <select class="form-select" id="aerialSelect_${hotspot._id}">
+                                <option value="">Select Video</option>
+                                ${aerialVideos.map(asset => `
+                                    <option value="${asset._id}" 
+                                        ${hotspotPlaylists.aerial?.videoId === asset._id ? 'selected' : ''}>
+                                        ${asset.name || 'Unnamed Asset'}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Transition Video</label>
+                            <select class="form-select" id="transitionSelect_${hotspot._id}">
+                                <option value="">Select Video</option>
+                                ${transitionVideos.map(asset => `
+                                    <option value="${asset._id}" 
+                                        ${hotspotPlaylists.transition?.videoId === asset._id ? 'selected' : ''}>
+                                        ${asset.name || 'Unnamed Asset'}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
                         <div class="mb-3">
                             <label class="form-label">Dive In Video</label>
                             <select class="form-select" id="diveInSelect_${hotspot._id}">
@@ -1931,9 +1974,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Add event listeners for playlist changes
         primaryHotspots.forEach(hotspot => {
+            const aerialSelect = document.getElementById(`aerialSelect_${hotspot._id}`);
+            const transitionSelect = document.getElementById(`transitionSelect_${hotspot._id}`);
             const diveInSelect = document.getElementById(`diveInSelect_${hotspot._id}`);
             const floorLevelSelect = document.getElementById(`floorLevelSelect_${hotspot._id}`);
             const zoomOutSelect = document.getElementById(`zoomOutSelect_${hotspot._id}`);
+
+            if (aerialSelect) {
+                aerialSelect.addEventListener('change', () => {
+                    updateHotspotPlaylist(hotspot._id, 'aerial', aerialSelect.value);
+                });
+            }
+
+            if (transitionSelect) {
+                transitionSelect.addEventListener('change', () => {
+                    updateHotspotPlaylist(hotspot._id, 'transition', transitionSelect.value);
+                });
+            }
 
             if (diveInSelect) {
                 diveInSelect.addEventListener('change', () => {
