@@ -42,6 +42,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let assets = []; // Add global assets array
     let isInitializing = false; // Add flag to prevent concurrent initialization
     let currentGlobalVideos = null; // Add variable to store current global videos state
+    let currentAssetHouse = currentHouse; // Add variable for asset house
+    let currentPlaylistHouse = currentHouse; // Add variable for playlist house
 
     // Initialize DOM elements
     const hotspotModal = document.getElementById('hotspotModal');
@@ -2737,4 +2739,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
 
         // Create UI for each hotspot's videos
-}); 
+        // ... rest of the function implementation ...
+    }
+
+    // Initialize the admin panel
+    await initialize();
+}); // Close the DOMContentLoaded event listener 
