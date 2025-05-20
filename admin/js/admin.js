@@ -1356,114 +1356,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function loadAerialVideo(houseId) {
         try {
             console.log('Loading aerial video for house:', houseId);
-            const response = await fetch(`/api/assets?houseId=${houseId}&type=aerial&_=${Date.now()}`);
-            if (!response.ok) {
-                console.error('Failed to load aerial video:', response.status, response.statusText);
-                throw new Error(`Failed to load aerial video: ${response.status} ${response.statusText}`);
-            }
+            const response = await fetch(`/api/assets?houseId=${houseId}&_=${Date.now()}`);
+            if (!response.ok) throw new Error('Failed to load assets');
             
             const data = await response.json();
-            if (!data || !data.assets || data.assets.length === 0) {
-                console.warn('No aerial video found for house:', houseId);
-                showNotification('No aerial video found for this house. Please upload one in the Assets section.', 'warning');
-                return;
+            console.log('Assets response:', data);
+            
+            // Find aerial video for this house
+            const aerialVideo = data.assets.find(asset => asset.type === 'aerial' && asset.houseId === houseId);
+            
+            if (aerialVideo) {
+                console.log('Found aerial video:', aerialVideo);
+                // Update the aerial video element
+                const aerialVideoElement = document.getElementById('aerialVideo');
+                if (aerialVideoElement) {
+                    aerialVideoElement.src = aerialVideo.url;
+                    aerialVideoElement.load();
+                    // Set video attributes
+                    aerialVideoElement.loop = true;
+                    aerialVideoElement.muted = true;
+                    aerialVideoElement.playsInline = true;
+                    // Try to play
+                    try {
+                        await aerialVideoElement.play();
+                    } catch (playError) {
+                        console.warn('Could not autoplay aerial video:', playError);
+                    }
+                }
+            } else {
+                console.log('No aerial video found for house:', houseId);
+                // Clear the aerial video element
+                const aerialVideoElement = document.getElementById('aerialVideo');
+                if (aerialVideoElement) {
+                    aerialVideoElement.src = '';
+                    aerialVideoElement.load();
+                }
             }
-
-            // Get the aerial video asset
-            const aerialVideo = data.assets.find(asset => asset.type === 'aerial');
-            if (!aerialVideo) {
-                console.warn('No aerial video found for house:', houseId);
-                showNotification('No aerial video found for this house. Please upload one in the Assets section.', 'warning');
-                return;
-            }
-
-            console.log('Found aerial video asset:', aerialVideo);
-
-            // Update preview video
-            const previewVideo = document.getElementById('previewVideo');
-            if (!previewVideo) {
-                console.error('Preview video element not found');
-                throw new Error('Preview video element not found');
-            }
-
-            // Reset video element
-            previewVideo.pause();
-            previewVideo.removeAttribute('src');
-            previewVideo.load();
-
-            // Set video properties
-            previewVideo.src = aerialVideo.url;
-            previewVideo.loop = true;
-            previewVideo.autoplay = true;
-            previewVideo.muted = true;
-            previewVideo.playsInline = true;
-            previewVideo.preload = 'auto';
-
-            // Add event listeners for video loading
-            previewVideo.addEventListener('loadstart', () => {
-                console.log('Video load started for house:', houseId);
-            });
-
-            previewVideo.addEventListener('loadedmetadata', () => {
-                console.log('Aerial video metadata loaded for house:', houseId, {
-                    width: previewVideo.videoWidth,
-                    height: previewVideo.videoHeight,
-                    duration: previewVideo.duration,
-                    readyState: previewVideo.readyState,
-                    networkState: previewVideo.networkState,
-                    error: previewVideo.error ? {
-                        code: previewVideo.error.code,
-                        message: previewVideo.error.message
-                    } : null
-                });
-                updatePreview(); // Re-render with correct dimensions
-            });
-
-            previewVideo.addEventListener('loadeddata', () => {
-                console.log('Video data loaded for house:', houseId, 'readyState:', previewVideo.readyState);
-            });
-
-            previewVideo.addEventListener('canplay', () => {
-                console.log('Video can play for house:', houseId, 'attempting playback');
-                previewVideo.play().catch(error => {
-                    console.error('Error during play() call for house:', houseId, error);
-                    showNotification('Error playing aerial video: ' + error.message, 'error');
-                });
-            });
-
-            previewVideo.addEventListener('playing', () => {
-                console.log('Video is now playing for house:', houseId);
-            });
-
-            previewVideo.addEventListener('error', (e) => {
-                console.error('Error loading aerial video for house:', houseId, {
-                    error: e,
-                    videoError: previewVideo.error ? {
-                        code: previewVideo.error.code,
-                        message: previewVideo.error.message
-                    } : null,
-                    readyState: previewVideo.readyState,
-                    networkState: previewVideo.networkState,
-                    src: previewVideo.src
-                });
-
-                // Show error in UI
-                showNotification('Error loading aerial video: ' + (previewVideo.error?.message || 'Unknown error'), 'error');
-            });
-
-            // Load the video
-            try {
-                console.log('Calling load() on video element for house:', houseId);
-                await previewVideo.load();
-                console.log('Video load() completed for house:', houseId);
-            } catch (error) {
-                console.error('Error during video load process for house:', houseId, error);
-                throw error;
-            }
-
-            console.log('Aerial video loaded successfully for house:', houseId);
         } catch (error) {
-            console.error('Error loading aerial video for house:', houseId, error);
+            console.error('Error loading aerial video:', error);
             showNotification('Error loading aerial video: ' + error.message, 'error');
         }
     }

@@ -512,4 +512,68 @@ router.patch('/:id', async (req, res) => {
     }
 });
 
+// Global videos routes
+router.get('/global-videos', async (req, res) => {
+    try {
+        // Get all assets that are global (no houseId) and are either aerial or transition type
+        const assets = await Asset.find({
+            houseId: null,
+            type: { $in: ['aerial', 'transition'] }
+        });
+        
+        // Modify asset URLs to use our proxy
+        const modifiedAssets = assets.map(asset => ({
+            ...asset.toObject(),
+            url: `/api/assets/video/${asset._id}`
+        }));
+        
+        // Group by type
+        const globalVideos = {
+            aerial: modifiedAssets.find(asset => asset.type === 'aerial'),
+            transition: modifiedAssets.find(asset => asset.type === 'transition')
+        };
+        
+        res.json({ globalVideos });
+    } catch (error) {
+        console.error('Error fetching global videos:', error);
+        res.status(500).json({ error: 'Error fetching global videos' });
+    }
+});
+
+router.post('/global-videos', async (req, res) => {
+    try {
+        const { globalVideos } = req.body;
+        
+        if (!globalVideos || typeof globalVideos !== 'object') {
+            return res.status(400).json({ error: 'Invalid request data' });
+        }
+
+        // Update or create global videos
+        for (const [type, video] of Object.entries(globalVideos)) {
+            if (!video || !video._id) continue;
+
+            // Find existing global video of this type
+            let asset = await Asset.findOne({ type, houseId: null });
+            
+            if (asset) {
+                // Update existing asset
+                asset._id = video._id;
+                await asset.save();
+            } else {
+                // Create new asset
+                asset = await Asset.findById(video._id);
+                if (asset) {
+                    asset.houseId = null; // Make it global
+                    await asset.save();
+                }
+            }
+        }
+
+        res.json({ message: 'Global videos updated successfully' });
+    } catch (error) {
+        console.error('Error saving global videos:', error);
+        res.status(500).json({ error: 'Error saving global videos' });
+    }
+});
+
 module.exports = router; 
