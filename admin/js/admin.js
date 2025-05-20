@@ -2656,4 +2656,85 @@ document.addEventListener('DOMContentLoaded', async () => {
             showError('Failed to load aerial video');
         }
     }
+
+    // Update the house videos UI section
+    function updateHouseVideosUI() {
+        const houseVideosSection = document.getElementById('houseVideosSection');
+        if (!houseVideosSection) return;
+
+        const currentHouse = parseInt(document.getElementById('houseSelect').value);
+        const houseVideo = currentHouseVideos[currentHouse] || {};
+
+        // Get all video assets for the current house
+        const houseAssets = assets.filter(asset => 
+            asset.houseId === currentHouse && 
+            asset.type === 'video' && 
+            (asset.name.toLowerCase().includes('aerial') || 
+             asset.name.toLowerCase().includes('transition'))
+        );
+
+        // Create UI for house-level videos
+        houseVideosSection.innerHTML = `
+            <h3>House Videos</h3>
+            <div class="form-group">
+                <label for="aerialVideo">Aerial Video:</label>
+                <select id="aerialVideo" class="form-control">
+                    <option value="">Select Aerial Video</option>
+                    ${houseAssets
+                        .filter(asset => asset.name.toLowerCase().includes('aerial'))
+                        .map(asset => `
+                            <option value="${asset._id}" ${houseVideo.aerial?.videoId === asset._id ? 'selected' : ''}>
+                                ${asset.name}
+                            </option>
+                        `).join('')}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="transitionVideo">Transition Video:</label>
+                <select id="transitionVideo" class="form-control">
+                    <option value="">Select Transition Video</option>
+                    ${houseAssets
+                        .filter(asset => asset.name.toLowerCase().includes('transition'))
+                        .map(asset => `
+                            <option value="${asset._id}" ${houseVideo.transition?.videoId === asset._id ? 'selected' : ''}>
+                                ${asset.name}
+                            </option>
+                        `).join('')}
+                </select>
+            </div>
+        `;
+
+        // Add event listeners for house-level video changes
+        document.getElementById('aerialVideo').addEventListener('change', async (e) => {
+            const videoId = e.target.value;
+            const videoName = e.target.options[e.target.selectedIndex].text;
+            await updateHouseVideo('aerial', videoId, videoName);
+        });
+
+        document.getElementById('transitionVideo').addEventListener('change', async (e) => {
+            const videoId = e.target.value;
+            const videoName = e.target.options[e.target.selectedIndex].text;
+            await updateHouseVideo('transition', videoId, videoName);
+        });
+    }
+
+    // Update the playlist UI to handle hotspot-level videos
+    function updatePlaylistUI() {
+        const playlistSection = document.getElementById('playlistSection');
+        if (!playlistSection) return;
+
+        const currentHouse = parseInt(document.getElementById('houseSelect').value);
+        const hotspots = hotspotsData[currentHouse] || [];
+        const hotspotVideos = hotspotVideosData[currentHouse] || {};
+
+        // Get all video assets for the current house
+        const houseAssets = assets.filter(asset => 
+            asset.houseId === currentHouse && 
+            asset.type === 'video' && 
+            (asset.name.toLowerCase().includes('divein') || 
+             asset.name.toLowerCase().includes('floorlevel') || 
+             asset.name.toLowerCase().includes('zoomout'))
+        );
+
+        // Create UI for each hotspot's videos
 }); 

@@ -188,6 +188,10 @@ const houseVideoSchema = new mongoose.Schema({
     aerial: {
         videoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Asset' },
         name: String
+    },
+    transition: {
+        videoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Asset' },
+        name: String
     }
 });
 
@@ -197,9 +201,18 @@ const HouseVideo = mongoose.model('HouseVideo', houseVideoSchema);
 const hotspotVideoSchema = new mongoose.Schema({
     houseId: { type: Number, required: true },
     hotspotId: { type: String, required: true },
-    diveIn: { videoId: String },
-    floorLevel: { videoId: String },
-    zoomOut: { videoId: String }
+    diveIn: { 
+        videoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Asset' },
+        name: String
+    },
+    floorLevel: { 
+        videoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Asset' },
+        name: String
+    },
+    zoomOut: { 
+        videoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Asset' },
+        name: String
+    }
 });
 
 // Create compound index for hotspot videos
@@ -273,6 +286,16 @@ app.put('/api/house-videos', async (req, res) => {
             };
         } else {
             houseVideo.aerial = null;
+        }
+
+        // Update transition video
+        if (houseVideos.transition) {
+            houseVideo.transition = {
+                videoId: houseVideos.transition.videoId,
+                name: houseVideos.transition.name
+            };
+        } else {
+            houseVideo.transition = null;
         }
 
         await houseVideo.save();
