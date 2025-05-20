@@ -2401,19 +2401,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Modify the house selection handler
     function handleHouseSelection(houseId) {
-        currentHouseId = houseId;
+        currentHouseId = parseInt(houseId);
+        currentAssetHouse = currentHouseId;
+        currentPlaylistHouse = currentHouseId;
         
-        // Update UI to show selected house
-        document.querySelectorAll('.house-selector button').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.houseId === houseId.toString());
-        });
-
-        // Load house-specific data
-        loadHotspots(houseId);
-        loadHouseVideos(houseId);
+        // Update UI to reflect current house
+        document.getElementById('houseSelector').value = currentHouseId;
+        document.getElementById('assetHouseSelector').value = currentAssetHouse;
+        document.getElementById('playlistHouseSelector').value = currentPlaylistHouse;
         
-        // Load global videos (without house context)
-        loadGlobalVideos();
+        // Load data for the selected house
+        loadAssets(currentHouseId);
+        loadHotspots(currentHouseId);
+        loadPlaylists(currentHouseId);
+        loadAerialVideo(currentHouseId);
     }
 
     // Modify loadGlobalVideos to not depend on house selection
@@ -2534,204 +2535,68 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Update house videos UI
     function updateHouseVideosUI(houseVideo) {
-        // Initialize houseVideo if it doesn't exist
-        houseVideo = houseVideo || {
-            kopAerial: { videoId: null },
-            dallasAerial: { videoId: null },
-            kopToDallas: { videoId: null },
-            dallasToKop: { videoId: null }
-        };
-        
-        // Get available videos for the current asset house
-        const aerialVideos = assets.filter(asset => 
-            asset.type === 'aerial' && 
-            asset.houseId === currentAssetHouse
+        const aerialVideoSelect = document.getElementById('aerialVideoSelect');
+        if (!aerialVideoSelect) return;
+
+        // Clear existing options
+        aerialVideoSelect.innerHTML = '<option value="">Select Aerial Video</option>';
+
+        // Get all video assets for the current house
+        const videoAssets = assets.filter(asset => 
+            asset.houseId === currentHouseId && 
+            asset.type === 'video' &&
+            asset.name.toLowerCase().includes('aerial')
         );
-        
-        // Update KOP Aerial select
-        const kopAerialSelect = document.getElementById('kopAerialSelect');
-        if (kopAerialSelect) {
-            // Remove existing event listeners
-            const newKopAerialSelect = kopAerialSelect.cloneNode(true);
-            kopAerialSelect.parentNode.replaceChild(newKopAerialSelect, kopAerialSelect);
-            
-            newKopAerialSelect.innerHTML = `
-                <option value="">Select Video</option>
-                ${aerialVideos.map(asset => `
-                    <option value="${asset._id}" 
-                        ${houseVideo.kopAerial?.videoId === asset._id ? 'selected' : ''}>
-                        ${asset.name || 'Unnamed Asset'}
-                    </option>
-                `).join('')}
-            `;
-            
-            // Add change event listener
-            newKopAerialSelect.addEventListener('change', async () => {
-                try {
-                    const response = await fetch('/api/house-videos', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            houseId: 1, // KOP house ID
-                            houseVideo: {
-                                ...houseVideo,
-                                kopAerial: { videoId: newKopAerialSelect.value }
-                            }
-                        })
-                    });
-                    
-                    if (!response.ok) throw new Error('Failed to update KOP aerial video');
-                    const data = await response.json();
-                    if (data.houseVideo) {
-                        houseVideo = data.houseVideo;
-                    }
-                    showNotification('KOP aerial video updated successfully');
-                } catch (error) {
-                    console.error('Error updating KOP aerial video:', error);
-                    showNotification('Error updating KOP aerial video: ' + error.message, 'error');
-                }
-            });
+
+        // Add options for each video asset
+        videoAssets.forEach(asset => {
+            const option = document.createElement('option');
+            option.value = asset._id;
+            option.textContent = asset.name;
+            if (houseVideo?.aerial?.videoId === asset._id) {
+                option.selected = true;
+            }
+            aerialVideoSelect.appendChild(option);
+        });
+    }
+
+    // Update the initialization function
+    async function initializeVideoPlaylists(houseId) {
+        try {
+            currentHouseId = parseInt(houseId);
+            currentAssetHouse = currentHouseId;
+            currentPlaylistHouse = currentHouseId;
+
+            // Load initial data
+            await Promise.all([
+                loadAssets(currentHouseId),
+                loadHotspots(currentHouseId),
+                loadPlaylists(currentHouseId),
+                loadAerialVideo(currentHouseId)
+            ]);
+
+            // Update house selectors
+            document.getElementById('houseSelector').value = currentHouseId;
+            document.getElementById('assetHouseSelector').value = currentAssetHouse;
+            document.getElementById('playlistHouseSelector').value = currentPlaylistHouse;
+
+        } catch (error) {
+            console.error('Error initializing video playlists:', error);
+            showError('Failed to initialize video playlists');
         }
-        
-        // Update DALLAS Aerial select
-        const dallasAerialSelect = document.getElementById('dallasAerialSelect');
-        if (dallasAerialSelect) {
-            // Remove existing event listeners
-            const newDallasAerialSelect = dallasAerialSelect.cloneNode(true);
-            dallasAerialSelect.parentNode.replaceChild(newDallasAerialSelect, dallasAerialSelect);
+    }
+
+    // Update the aerial video loading function
+    async function loadAerialVideo(houseId) {
+        try {
+            const response = await fetch(`/api/house-videos?houseId=${houseId}&_=${Date.now()}`);
+            if (!response.ok) throw new Error('Failed to load house videos');
             
-            newDallasAerialSelect.innerHTML = `
-                <option value="">Select Video</option>
-                ${aerialVideos.map(asset => `
-                    <option value="${asset._id}" 
-                        ${houseVideo.dallasAerial?.videoId === asset._id ? 'selected' : ''}>
-                        ${asset.name || 'Unnamed Asset'}
-                    </option>
-                `).join('')}
-            `;
-            
-            // Add change event listener
-            newDallasAerialSelect.addEventListener('change', async () => {
-                try {
-                    const response = await fetch('/api/house-videos', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            houseId: 2, // DALLAS house ID
-                            houseVideo: {
-                                ...houseVideo,
-                                dallasAerial: { videoId: newDallasAerialSelect.value }
-                            }
-                        })
-                    });
-                    
-                    if (!response.ok) throw new Error('Failed to update DALLAS aerial video');
-                    const data = await response.json();
-                    if (data.houseVideo) {
-                        houseVideo = data.houseVideo;
-                    }
-                    showNotification('DALLAS aerial video updated successfully');
-                } catch (error) {
-                    console.error('Error updating DALLAS aerial video:', error);
-                    showNotification('Error updating DALLAS aerial video: ' + error.message, 'error');
-                }
-            });
-        }
-        
-        // Get available transition videos
-        const transitionVideos = assets.filter(asset => 
-            asset.type === 'transition' && 
-            asset.houseId === currentAssetHouse
-        );
-        
-        // Update KOP to DALLAS transition select
-        const kopToDallasSelect = document.getElementById('kopToDallasSelect');
-        if (kopToDallasSelect) {
-            // Remove existing event listeners
-            const newKopToDallasSelect = kopToDallasSelect.cloneNode(true);
-            kopToDallasSelect.parentNode.replaceChild(newKopToDallasSelect, kopToDallasSelect);
-            
-            newKopToDallasSelect.innerHTML = `
-                <option value="">Select Video</option>
-                ${transitionVideos.map(asset => `
-                    <option value="${asset._id}" 
-                        ${houseVideo.kopToDallas?.videoId === asset._id ? 'selected' : ''}>
-                        ${asset.name || 'Unnamed Asset'}
-                    </option>
-                `).join('')}
-            `;
-            
-            // Add change event listener
-            newKopToDallasSelect.addEventListener('change', async () => {
-                try {
-                    const response = await fetch('/api/house-videos', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            houseId: 1, // KOP house ID
-                            houseVideo: {
-                                ...houseVideo,
-                                kopToDallas: { videoId: newKopToDallasSelect.value }
-                            }
-                        })
-                    });
-                    
-                    if (!response.ok) throw new Error('Failed to update KOP to DALLAS transition video');
-                    const data = await response.json();
-                    if (data.houseVideo) {
-                        houseVideo = data.houseVideo;
-                    }
-                    showNotification('KOP to DALLAS transition video updated successfully');
-                } catch (error) {
-                    console.error('Error updating KOP to DALLAS transition video:', error);
-                    showNotification('Error updating KOP to DALLAS transition video: ' + error.message, 'error');
-                }
-            });
-        }
-        
-        // Update DALLAS to KOP transition select
-        const dallasToKopSelect = document.getElementById('dallasToKopSelect');
-        if (dallasToKopSelect) {
-            // Remove existing event listeners
-            const newDallasToKopSelect = dallasToKopSelect.cloneNode(true);
-            dallasToKopSelect.parentNode.replaceChild(newDallasToKopSelect, dallasToKopSelect);
-            
-            newDallasToKopSelect.innerHTML = `
-                <option value="">Select Video</option>
-                ${transitionVideos.map(asset => `
-                    <option value="${asset._id}" 
-                        ${houseVideo.dallasToKop?.videoId === asset._id ? 'selected' : ''}>
-                        ${asset.name || 'Unnamed Asset'}
-                    </option>
-                `).join('')}
-            `;
-            
-            // Add change event listener
-            newDallasToKopSelect.addEventListener('change', async () => {
-                try {
-                    const response = await fetch('/api/house-videos', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            houseId: 2, // DALLAS house ID
-                            houseVideo: {
-                                ...houseVideo,
-                                dallasToKop: { videoId: newDallasToKopSelect.value }
-                            }
-                        })
-                    });
-                    
-                    if (!response.ok) throw new Error('Failed to update DALLAS to KOP transition video');
-                    const data = await response.json();
-                    if (data.houseVideo) {
-                        houseVideo = data.houseVideo;
-                    }
-                    showNotification('DALLAS to KOP transition video updated successfully');
-                } catch (error) {
-                    console.error('Error updating DALLAS to KOP transition video:', error);
-                    showNotification('Error updating DALLAS to KOP transition video: ' + error.message, 'error');
-                }
-            });
+            const { houseVideo } = await response.json();
+            updateHouseVideosUI(houseVideo);
+        } catch (error) {
+            console.error('Error loading aerial video:', error);
+            showError('Failed to load aerial video');
         }
     }
 }); 
