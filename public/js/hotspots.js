@@ -394,9 +394,6 @@ class HotspotManager {
             console.log('House videos response:', houseVideo);
             console.log('House assets response:', houseAssetsData);
 
-            if (!houseVideo) {
-                throw new Error('Invalid house videos response format');
-            }
             if (!houseAssetsData || !houseAssetsData.assets) {
                 throw new Error('Invalid house assets response format');
             }
@@ -404,19 +401,18 @@ class HotspotManager {
             // Store house assets for later use
             this.assets = houseAssetsData.assets;
 
-            // Handle house aerial video
-            if (!houseVideo.aerial?.videoId) {
+            // Get house-specific aerial video
+            let aerialAsset = null;
+            if (houseVideo?.aerial?.videoId) {
+                aerialAsset = this.assets.find(a => a._id === houseVideo.aerial.videoId);
+                console.log('Found house-specific aerial video:', aerialAsset);
+            }
+
+            if (!aerialAsset) {
                 console.log('No aerial video configured for house:', this.currentHouse);
                 return;
             }
 
-            const aerialAsset = this.assets.find(a => a._id === houseVideo.aerial.videoId);
-            if (!aerialAsset) {
-                console.log('Aerial video not found in assets:', houseVideo.aerial.videoId);
-                return;
-            }
-
-            console.log('Found aerial asset:', aerialAsset);
             const aerialVideo = document.getElementById('aerialVideo');
             if (!aerialVideo) {
                 console.error('Aerial video element not found');

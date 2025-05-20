@@ -32,7 +32,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Global variables
-    let currentHouse = 1; // Set default house ID
+    let currentHouse = 1; // Default house ID for hotspots
+    let currentAssetHouse = 1; // Separate house ID for assets
+    let currentPlaylistHouse = 1; // Separate house ID for playlists
     let editingHotspotId = null;
     let assetTypes = null;
     let assets = []; // Add global assets array
@@ -150,16 +152,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('Updating current house to:', newHouseId);
         currentHouse = newHouseId;
         
-        // Update all house selectors
+        // Update hotspot house selector only
         if (houseSelector) houseSelector.value = newHouseId.toString();
-        if (assetHouseSelector) assetHouseSelector.value = newHouseId.toString();
-        if (playlistHouseSelector) playlistHouseSelector.value = newHouseId.toString();
         
         try {
-            // Load house-specific data (hotspots and assets) in sequence
+            // Load house-specific data (hotspots only)
             await loadHotspots(newHouseId);
-            await loadAssets(newHouseId);
-            await loadAerialVideo(newHouseId); // Add this line to load aerial video
             
             // Update preview if in hotspots section
             const hotspotsSection = document.getElementById('hotspotsSection');
@@ -167,11 +165,47 @@ document.addEventListener('DOMContentLoaded', async () => {
                 updateHotspotList();
                 updatePreview();
             }
-            
-            // Do NOT reload global videos here - they should persist across house changes
         } catch (error) {
             console.error('Error updating house data:', error);
             showNotification('Error updating house data: ' + error.message, 'error');
+        }
+    }
+
+    // Separate handler for asset house selection
+    async function updateAssetHouse(newHouseId) {
+        if (currentAssetHouse === newHouseId) return;
+        console.log('Updating asset house to:', newHouseId);
+        currentAssetHouse = newHouseId;
+        
+        // Update asset house selector only
+        if (assetHouseSelector) assetHouseSelector.value = newHouseId.toString();
+        
+        try {
+            // Load assets for the selected house
+            await loadAssets(newHouseId);
+            await loadAerialVideo(newHouseId);
+        } catch (error) {
+            console.error('Error updating asset house data:', error);
+            showNotification('Error updating asset house data: ' + error.message, 'error');
+        }
+    }
+
+    // Separate handler for playlist house selection
+    async function updatePlaylistHouse(newHouseId) {
+        if (currentPlaylistHouse === newHouseId) return;
+        console.log('Updating playlist house to:', newHouseId);
+        currentPlaylistHouse = newHouseId;
+        
+        // Update playlist house selector only
+        if (playlistHouseSelector) playlistHouseSelector.value = newHouseId.toString();
+        
+        try {
+            // Load playlists for the selected house
+            const playlists = await loadPlaylists(newHouseId);
+            updatePlaylistUI(playlists);
+        } catch (error) {
+            console.error('Error updating playlist house data:', error);
+            showNotification('Error updating playlist house data: ' + error.message, 'error');
         }
     }
 
@@ -181,12 +215,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     assetHouseSelector.addEventListener('change', (e) => {
-        updateCurrentHouse(parseInt(e.target.value));
+        updateAssetHouse(parseInt(e.target.value));
     });
 
     if (playlistHouseSelector) {
         playlistHouseSelector.addEventListener('change', (e) => {
-            updateCurrentHouse(parseInt(e.target.value));
+            updatePlaylistHouse(parseInt(e.target.value));
         });
     }
 
@@ -267,37 +301,39 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Update assets table
             const tableBody = document.getElementById('assetsTableBody');
-            tableBody.innerHTML = data.assets.map(asset => `
-                <tr>
-                    <td>${asset.name || 'Unnamed Asset'}</td>
-                    <td>${asset.type}</td>
-                    <td>
-                        <video class="img-fluid" style="max-width: 200px;" controls muted>
-                            <source src="${asset.url}" type="video/mp4">
-                        </video>
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-light me-2" onclick="editAsset('${asset._id}', '${asset.type}')">
-                            Edit
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteAsset('${asset._id}')">
-                            Delete
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
+            if (tableBody) {
+                tableBody.innerHTML = data.assets.map(asset => `
+                    <tr>
+                        <td>${asset.name || 'Unnamed Asset'}</td>
+                        <td>${asset.type}</td>
+                        <td>
+                            <video class="img-fluid" style="max-width: 200px;" controls muted>
+                                <source src="${asset.url}" type="video/mp4">
+                            </video>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-light me-2" onclick="editAsset('${asset._id}', '${asset.type}')">
+                                Edit
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteAsset('${asset._id}')">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
 
-            // Add event listeners to delete buttons
-            tableBody.querySelectorAll('button[onclick^="deleteAsset"]').forEach(button => {
-                button.addEventListener('click', () => deleteAsset(button.closest('tr').querySelector('button[onclick^="deleteAsset"]').getAttribute('onclick').match(/'([^']+)'/)[1]));
-            });
+                // Add event listeners to delete buttons
+                tableBody.querySelectorAll('button[onclick^="deleteAsset"]').forEach(button => {
+                    button.addEventListener('click', () => deleteAsset(button.closest('tr').querySelector('button[onclick^="deleteAsset"]').getAttribute('onclick').match(/'([^']+)'/)[1]));
+                });
 
-            // Initialize video optimization for all videos in the table
-            tableBody.querySelectorAll('video').forEach(video => {
-                optimizeVideoPlayback(video);
-            });
+                // Initialize video optimization for all videos in the table
+                tableBody.querySelectorAll('video').forEach(video => {
+                    optimizeVideoPlayback(video);
+                });
+            }
 
-            return assets; // Return assets for use in other functions
+            return assets;
         } catch (error) {
             console.error('Error loading assets:', error);
             alert('Failed to load assets. Please refresh the page.');
@@ -1804,19 +1840,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        // Get primary hotspots
-        const primaryHotspots = window.hotspots.filter(h => h.type === 'primary' && h.houseId === currentHouse);
+        // Get primary hotspots for the playlist house
+        const primaryHotspots = window.hotspots.filter(h => h.type === 'primary' && h.houseId === currentPlaylistHouse);
         console.log('Primary hotspots for playlists:', primaryHotspots);
+        
+        // Get available videos for the asset house
+        const diveInVideos = assets.filter(asset => asset.type === 'diveIn' && asset.houseId === currentAssetHouse);
+        const floorLevelVideos = assets.filter(asset => asset.type === 'floorLevel' && asset.houseId === currentAssetHouse);
+        const zoomOutVideos = assets.filter(asset => asset.type === 'zoomOut' && asset.houseId === currentAssetHouse);
         
         // Create playlist UI for each primary hotspot
         hotspotPlaylistsContainer.innerHTML = primaryHotspots.map(hotspot => {
             const hotspotPlaylists = playlists.hotspots[hotspot._id] || {};
             console.log(`Creating playlist UI for hotspot ${hotspot._id}:`, hotspotPlaylists);
-            
-            // Get available videos for each type
-            const diveInVideos = assets.filter(asset => asset.type === 'diveIn');
-            const floorLevelVideos = assets.filter(asset => asset.type === 'floorLevel');
-            const zoomOutVideos = assets.filter(asset => asset.type === 'zoomOut');
             
             return `
                 <div class="card bg-dark mb-3">
@@ -1891,7 +1927,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Update hotspot playlist
     async function updateHotspotPlaylist(hotspotId, type, videoId) {
         try {
-            const playlists = await loadPlaylists(currentHouse);
+            const playlists = await loadPlaylists(currentPlaylistHouse);
             console.log('Current playlists:', playlists);
             
             // Initialize hotspot playlists if they don't exist
@@ -1910,7 +1946,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             playlists.hotspots[hotspotId][type] = { videoId };
 
             // Save updated playlists
-            await savePlaylists(currentHouse, playlists);
+            await savePlaylists(currentPlaylistHouse, playlists);
             
             // Update UI
             updatePlaylistUI(playlists);
