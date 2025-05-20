@@ -301,23 +301,47 @@ class HotspotManager {
     
     async reload() {
         try {
-            // Clear existing data
-            this.hotspots.clear();
-            this.hotspotAssets = [];
+            console.log('Reloading hotspot manager...');
             
-            // Reload hotspots and assets
-            await this.loadHotspots();
-            await this.loadAssets();
+            // Clear existing state
+            this.clearHotspots();
+            this.assets = [];
+            this.hotspots = [];
+            this.currentHotspot = null;
             
-            // Reset views
-            this.aerialView.style.display = 'block';
-            this.transitionView.style.display = 'none';
-            this.floorLevelView.style.display = 'none';
+            // Reset video elements
+            if (this.aerialVideo) {
+                this.aerialVideo.src = '';
+                this.aerialVideo.load();
+            }
+            if (this.transitionVideo) {
+                this.transitionVideo.src = '';
+                this.transitionVideo.load();
+            }
+            if (this.floorLevelVideo) {
+                this.floorLevelVideo.src = '';
+                this.floorLevelVideo.load();
+            }
             
-            // Update state
-            this.stateIndicator.textContent = 'Current State: Aerial View';
+            // Load new data
+            await Promise.all([
+                this.loadAssets(),
+                this.loadHotspots()
+            ]);
+            
+            // Re-render hotspots
+            this.renderHotspots();
+            
+            // Re-initialize and preload videos for the new house
+            await this.initializeAndPreload();
+            
+            // Ensure we're showing the aerial view
+            await this.showAerialView();
+            
+            console.log('Hotspot manager reloaded successfully');
         } catch (error) {
-            console.error('Error reloading:', error);
+            console.error('Error reloading hotspot manager:', error);
+            throw error;
         }
     }
     
