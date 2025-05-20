@@ -32,15 +32,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Global variables
-    let currentHouse = 1; // Default house ID for hotspots
-    let currentAssetHouse = 1; // Separate house ID for assets
-    let currentPlaylistHouse = 1; // Separate house ID for playlists
+    let currentHouse = 1; // Default to KOP house
+    let currentHotspots = [];
+    let currentAssets = [];
+    let currentHouseVideos = null; // Store current house videos state
+    let currentPlaylists = null;
     let editingHotspotId = null;
     let assetTypes = null;
     let assets = []; // Add global assets array
     let isInitializing = false; // Add flag to prevent concurrent initialization
     let currentGlobalVideos = null; // Add variable to store current global videos state
-    let currentHouseVideos = null; // Add variable to store current house videos state
 
     // Initialize DOM elements
     const hotspotModal = document.getElementById('hotspotModal');

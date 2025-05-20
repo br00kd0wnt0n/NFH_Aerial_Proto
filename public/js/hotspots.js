@@ -403,6 +403,7 @@ class HotspotManager {
 
             // Get house-specific aerial video
             let aerialAsset = null;
+            
             if (houseVideo?.aerial?.videoId) {
                 aerialAsset = this.assets.find(a => a._id === houseVideo.aerial.videoId);
                 console.log('Found house-specific aerial video:', aerialAsset);
@@ -1935,15 +1936,6 @@ class HotspotManager {
                     if (hotspot.diveIn?.videoId) videoIds.add(hotspot.diveIn.videoId);
                     if (hotspot.floorLevel?.videoId) videoIds.add(hotspot.floorLevel.videoId);
                     if (hotspot.zoomOut?.videoId) videoIds.add(hotspot.zoomOut.videoId);
-                });
-            }
-
-            // Add global videos
-            const globalVideosResponse = await fetch(`/api/global-videos?_=${Date.now()}`);
-            if (globalVideosResponse.ok) {
-                const { globalVideos } = await globalVideosResponse.json();
-                Object.values(globalVideos).forEach(video => {
-                    if (video?.videoId) videoIds.add(video.videoId);
                 });
             }
 

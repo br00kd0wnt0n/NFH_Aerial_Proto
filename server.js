@@ -185,12 +185,13 @@ mongoose.connection.on('reconnected', () => {
 // House Video Schema - for house-specific videos
 const houseVideoSchema = new mongoose.Schema({
     houseId: { type: Number, required: true, unique: true },
-    aerial: { videoId: String },  // House's aerial video
-    transitions: {
-        toHouse1: { videoId: String },  // Transition video when switching to House 1
-        toHouse2: { videoId: String }   // Transition video when switching to House 2
+    aerial: {
+        videoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Asset' },
+        name: String
     }
 });
+
+const HouseVideo = mongoose.model('HouseVideo', houseVideoSchema);
 
 // Hotspot Video Schema - for hotspot-specific videos
 const hotspotVideoSchema = new mongoose.Schema({
@@ -204,34 +205,27 @@ const hotspotVideoSchema = new mongoose.Schema({
 // Create compound index for hotspot videos
 hotspotVideoSchema.index({ houseId: 1, hotspotId: 1 }, { unique: true });
 
-const HouseVideo = mongoose.model('HouseVideo', houseVideoSchema);
 const HotspotVideo = mongoose.model('HotspotVideo', hotspotVideoSchema);
 
-// Global Videos Schema
-const globalVideosSchema = new mongoose.Schema({
-    kopAerial: { videoId: String },
-    dallasAerial: { videoId: String },
-    kopToDallas: { videoId: String },
-    dallasToKop: { videoId: String }
-}, { _id: false });
-
-const GlobalVideos = mongoose.model('GlobalVideos', globalVideosSchema);
-
-// Initialize global videos if they don't exist
-async function initializeGlobalVideos() {
+// Remove global videos initialization
+async function initializeHouseVideos() {
     try {
-        const count = await GlobalVideos.countDocuments();
+        // Initialize house videos for both houses if they don't exist
+        const count = await HouseVideo.countDocuments();
         if (count === 0) {
-            await GlobalVideos.create({});
-            console.log('Initialized global videos document');
+            await HouseVideo.create([
+                { houseId: 1 }, // KOP house
+                { houseId: 2 }  // DALLAS house
+            ]);
+            console.log('Initialized house videos for both houses');
         }
     } catch (error) {
-        console.error('Error initializing global videos:', error);
+        console.error('Error initializing house videos:', error);
     }
 }
 
 // Call initialization
-initializeGlobalVideos();
+initializeHouseVideos();
 
 // Routes
 // Get house videos
@@ -242,18 +236,9 @@ app.get('/api/house-videos', async (req, res) => {
             return res.status(400).json({ error: 'House ID is required' });
         }
 
-        let houseVideo = await HouseVideo.findOne({ houseId });
+        const houseVideo = await HouseVideo.findOne({ houseId });
         if (!houseVideo) {
-            // Initialize with empty structure
-            houseVideo = new HouseVideo({
-                houseId,
-                aerial: { videoId: null },
-                transitions: {
-                    toHouse1: { videoId: null },
-                    toHouse2: { videoId: null }
-                }
-            });
-            await houseVideo.save();
+            return res.status(404).json({ error: 'House video not found' });
         }
 
         res.json({ houseVideo });
@@ -263,24 +248,35 @@ app.get('/api/house-videos', async (req, res) => {
     }
 });
 
-// Update house videos
-app.post('/api/house-videos', async (req, res) => {
+app.put('/api/house-videos', async (req, res) => {
     try {
-        const { houseId, houseVideo } = req.body;
+        const houseId = parseInt(req.query.houseId);
         if (!houseId) {
             return res.status(400).json({ error: 'House ID is required' });
         }
 
-        let existingVideo = await HouseVideo.findOne({ houseId: parseInt(houseId) });
-        if (existingVideo) {
-            existingVideo.set(houseVideo);
-            await existingVideo.save();
-        } else {
-            existingVideo = new HouseVideo({ houseId: parseInt(houseId), ...houseVideo });
-            await existingVideo.save();
+        const { houseVideos } = req.body;
+        if (!houseVideos || typeof houseVideos !== 'object') {
+            return res.status(400).json({ error: 'Invalid house videos data' });
         }
 
-        res.json({ houseVideo: existingVideo });
+        let houseVideo = await HouseVideo.findOne({ houseId });
+        if (!houseVideo) {
+            houseVideo = new HouseVideo({ houseId });
+        }
+
+        // Update aerial video
+        if (houseVideos.aerial) {
+            houseVideo.aerial = {
+                videoId: houseVideos.aerial.videoId,
+                name: houseVideos.aerial.name
+            };
+        } else {
+            houseVideo.aerial = null;
+        }
+
+        await houseVideo.save();
+        res.json({ houseVideo });
     } catch (error) {
         console.error('Error updating house videos:', error);
         res.status(500).json({ error: 'Failed to update house videos' });
@@ -353,83 +349,6 @@ app.post('/api/hotspot-videos', async (req, res) => {
     } catch (error) {
         console.error('Error updating hotspot videos:', error);
         res.status(500).json({ error: 'Failed to update hotspot videos' });
-    }
-});
-
-// Get global videos
-app.get('/api/global-videos', async (req, res) => {
-    try {
-        // Get the single global video document
-        const globalVideo = await GlobalVideos.findOne();
-        
-        // If no document exists, return empty structure
-        if (!globalVideo) {
-            return res.json({
-                globalVideos: {
-                    welcome: null,
-                    exit: null,
-                    error: null
-                }
-            });
-        }
-
-        // Return the global videos
-        res.json({ globalVideos: globalVideo.globalVideos || {} });
-    } catch (error) {
-        console.error('Error fetching global videos:', error);
-        res.status(500).json({ error: 'Failed to fetch global videos' });
-    }
-});
-
-// Update global videos
-app.post('/api/global-videos', async (req, res) => {
-    try {
-        const { globalVideos } = req.body;
-        
-        if (!globalVideos || typeof globalVideos !== 'object') {
-            console.error('Invalid request data:', req.body);
-            return res.status(400).json({ error: 'Invalid request data' });
-        }
-
-        // Get the single global video document
-        let globalVideo = await GlobalVideos.findOne();
-        if (!globalVideo) {
-            globalVideo = new GlobalVideos({});
-        }
-
-        // Update each video type
-        for (const [type, video] of Object.entries(globalVideos)) {
-            if (!video || !video.videoId) {
-                // If no video selected, set to null
-                globalVideo[type] = { videoId: null };
-                continue;
-            }
-
-            // Verify the asset exists
-            const asset = await Asset.findById(video.videoId);
-            if (!asset) {
-                console.error('Video asset not found:', video.videoId);
-                return res.status(404).json({ error: `Video asset not found for ${type}` });
-            }
-
-            // Update the global video entry
-            globalVideo[type] = {
-                videoId: video.videoId,
-                name: asset.name,
-                url: asset.url,
-                updatedAt: new Date()
-            };
-        }
-
-        // Save the updated document
-        await globalVideo.save();
-        console.log('Updated global videos:', globalVideo);
-
-        // Return the updated document
-        res.json({ globalVideos: globalVideo.toObject() });
-    } catch (error) {
-        console.error('Error updating global videos:', error);
-        res.status(500).json({ error: 'Failed to update global videos', details: error.message });
     }
 });
 
